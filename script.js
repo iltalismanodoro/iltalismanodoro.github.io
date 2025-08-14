@@ -1,143 +1,77 @@
-const video = document.getElementById('video');
-const canvas = document.getElementById('canvas');
-const shutter = document.getElementById('shutter');
-const switchBtn = document.getElementById('switch');
-
-let gl, program, positionBuffer, imageLocation, lutLocation;
-let videoTexture;
-let currentFacing = 'environment';
+let video = document.getElementById('video');
+let canvas = document.getElementById('canvas');
+let shutter = document.getElementById('shutter');
+let switchBtn = document.getElementById('switch');
+let gl = canvas.getContext('webgl');
 let stream;
+let currentFacingMode = 'environment';
 
-async function startCamera(facingMode) {
-  if (stream) stream.getTracks().forEach(track => track.stop());
-  stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: false });
-  video.srcObject = stream;
-  await video.play();
-
-  if (facingMode === 'user') {
-    video.classList.add('front');
-    canvas.classList.add('front');
-  } else {
-    video.classList.remove('front');
-    canvas.classList.remove('front');
+// Avvio fotocamera
+async function startCamera() {
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
   }
-  resizeCanvas();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: currentFacingMode }
+    });
+    video.srcObject = stream;
+
+    video.onloadedmetadata = () => {
+      video.play();
+      resizeCanvas();
+    };
+  } catch (err) {
+    console.error("Errore accesso fotocamera:", err);
+  }
 }
-
-switchBtn.addEventListener('click', () => {
-  currentFacing = currentFacing === 'environment' ? 'user' : 'environment';
-  startCamera(currentFacing);
-});
-
-startCamera(currentFacing);
 
 function resizeCanvas() {
   if (!video.videoWidth || !video.videoHeight) return;
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  let aspect = video.videoWidth / video.videoHeight;
+  let winAspect = window.innerWidth / window.innerHeight;
 
-  canvas.style.width = '100%';
-  canvas.style.height = '100%';
-  canvas.style.top = '50%';
-  canvas.style.left = '50%';
-  canvas.style.transform = video.classList.contains('front') 
-    ? 'translate(-50%, -50%) scaleX(-1)' 
-    : 'translate(-50%, -50%)';
+  if (winAspect > aspect) {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerWidth / aspect;
+  } else {
+    canvas.height = window.innerHeight;
+    canvas.width = window.innerHeight * aspect;
+  }
 
-  if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
+  canvas.style.left = `${(window.innerWidth - canvas.width) / 2}px`;
+  canvas.style.top = `${(window.innerHeight - canvas.height) / 2}px`;
+
+  gl.viewport(0, 0, canvas.width, canvas.height);
 }
 
 window.addEventListener('resize', resizeCanvas);
 
-function createShader(gl, type, source) {
-  const shader = gl.createShader(type);
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  return shader;
-}
-
-function createProgram(gl, vertexShader, fragmentShader) {
-  const program = gl.createProgram();
-  gl.attachShader(program, vertexShader);
-  gl.attachShader(program, fragmentShader);
-  gl.linkProgram(program);
-  return program;
-}
-
-function initWebGL() {
-  gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
-  const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
-  const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-  program = createProgram(gl, vertexShader, fragmentShader);
-  gl.useProgram(program);
-
-  const positionLocation = gl.getAttribLocation(program, 'a_position');
-  positionBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-    -1, -1,
-     1, -1,
-    -1,  1,
-    -1,  1,
-     1, -1,
-     1,  1
-  ]), gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(positionLocation);
-  gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-  imageLocation = gl.getUniformLocation(program, 'u_image');
-  lutLocation = gl.getUniformLocation(program, 'u_lut');
-
-  videoTexture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-
-  const lutImage = new Image();
-  lutImage.src = 'luts/film.png';
-  lutImage.onload = () => {
-    const lutTexture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, lutTexture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, lutImage);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, lutTexture);
-    gl.uniform1i(lutLocation, 1);
-    requestAnimationFrame(drawFrame);
-  };
-}
-
-function drawFrame() {
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
-  gl.uniform1i(imageLocation, 0);
-
-  gl.clearColor(0,0,0,1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-  requestAnimationFrame(drawFrame);
-}
-
-video.addEventListener('play', () => resizeCanvas() || initWebGL());
-
-// Shutter aggiornato per evitare immagine nera
-shutter.addEventListener('click', () => {
-  if(video.readyState < 2) return;
-
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = canvas.width;
-  tempCanvas.height = canvas.height;
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height);
-
-  const link = document.createElement('a');
-  link.download = `photo_${Date.now()}.jpg`;
-  link.href = tempCanvas.toDataURL('image/jpeg', 0.95);
-  link.click();
+// Cambio camera
+switchBtn.addEventListener('click', () => {
+  currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+  startCamera();
 });
+
+// Scatto con download automatico e fix immagine nera
+shutter.addEventListener('click', () => {
+  let tempCanvas = document.createElement('canvas');
+  tempCanvas.width = video.videoWidth;
+  tempCanvas.height = video.videoHeight;
+  let ctx = tempCanvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+
+  // Evita salvataggio immagine nera
+  if (ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height)
+        .data.some(channel => channel !== 0)) {
+    let link = document.createElement('a');
+    link.download = `foto_${Date.now()}.png`;
+    link.href = tempCanvas.toDataURL('image/png');
+    link.click();
+  } else {
+    console.warn("Foto non scattata: immagine nera.");
+  }
+});
+
+startCamera();
