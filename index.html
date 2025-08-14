@@ -1,19 +1,15 @@
 <!DOCTYPE html>
-<html lang="it">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LUT Camera 9:16</title>
+<meta charset="utf-8">
+<title>LUT Camera</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <video id="video" autoplay playsinline></video>
-<canvas id="canvas" style="display:none;"></canvas>
-
-<div id="shutter-container">
-  <div id="shutter-button"></div>
-</div>
-
+<canvas id="canvas"></canvas>
+<div id="shutter"></div>
+<script src="shaders.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
