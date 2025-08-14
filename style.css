@@ -1,8 +1,8 @@
 html, body {
   margin: 0;
   padding: 0;
-  background: black;
   height: 100%;
+  background: black;
   overflow: hidden;
 }
 
@@ -31,4 +31,20 @@ video, #canvas {
 
 #shutter:active {
   transform: translateX(-50%) scale(1.1);
+}
+
+#switch {
+  position: absolute;
+  bottom: 40px;
+  right: 40px;
+  width: 50px;
+  height: 50px;
+  background: white;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+#switch:active {
+  transform: scale(1.1);
 }
