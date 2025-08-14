@@ -27,7 +27,7 @@ switchBtn.innerHTML = `
 
 switchBtn.style.cssText = `
 position: absolute !important;
-bottom: 40px !important;
+bottom: 20px !important;
 right: 20px !important;
 width: 50px !important;
 height: 50px !important;
@@ -273,7 +273,7 @@ function capturePhoto() {
         captureGl.texImage2D(captureGl.TEXTURE_2D, 0, captureGl.RGB, captureGl.RGB, captureGl.UNSIGNED_BYTE, lutImage);
         captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_S, captureGl.CLAMP_TO_EDGE);
         captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_T, captureGl.CLAMP_TO_EDGE);
-        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MIN_FILTER, captureGl.LINEAR);
+        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.MIN_FILTER, captureGl.LINEAR);
         captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MAG_FILTER, captureGl.LINEAR);
         
         captureGl.viewport(0, 0, captureCanvas.width, captureCanvas.height);
@@ -293,13 +293,15 @@ function capturePhoto() {
     lutImage.src = 'lut.png';
 }
 
-function handlePressStart() {
+function handlePressStart(e) {
+    e.preventDefault();
     pressTimer = setTimeout(() => {
         startRecording();
     }, longPressThreshold);
 }
 
-function handlePressEnd() {
+function handlePressEnd(e) {
+    e.preventDefault();
     clearTimeout(pressTimer);
     if (isRecording) {
         stopRecording();
@@ -307,6 +309,8 @@ function handlePressEnd() {
         capturePhoto();
     }
 }
+
+function startRecording() {
     if (!currentStream) return;
     
     recordedChunks = [];
@@ -383,21 +387,33 @@ function handleVisibilityChange() {
         }, 100);
     }
 }
+
+// Event Listeners
+switchBtn.addEventListener('click', function() {
     usingFrontCamera = !usingFrontCamera;
     startCamera();
 });
 
+// Gestione eventi touch e mouse per lo shutter
 shutter.addEventListener('mousedown', handlePressStart);
 shutter.addEventListener('mouseup', handlePressEnd);
+shutter.addEventListener('mouseleave', handlePressEnd); // Aggiunto per gestire quando il mouse esce dal bottone
+
 shutter.addEventListener('touchstart', handlePressStart);
 shutter.addEventListener('touchend', handlePressEnd);
+shutter.addEventListener('touchcancel', handlePressEnd); // Aggiunto per gestire l'annullamento del touch
 
+// Event listener per il ridimensionamento della finestra
 let resizeTimeout;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(resizeCanvas, 100);
 });
 
+// Event listener per il cambio di visibilità della pagina
+document.addEventListener('visibilitychange', handleVisibilityChange);
+
+// Inizializzazione
 if (initWebGL()) {
     startCamera();
 } else {
