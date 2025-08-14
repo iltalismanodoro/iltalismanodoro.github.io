@@ -11,6 +11,7 @@ void main() {
     gl_Position = vec4(a_position, 0, 1);
 }
 `;
+
 const fragmentShaderSource = `
 precision mediump float;
 uniform sampler2D u_image;
