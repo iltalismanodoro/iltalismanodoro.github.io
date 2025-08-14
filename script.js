@@ -1,8 +1,9 @@
 let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
-let gl = canvas.getContext('webgl');
+let gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
 let shutter = document.getElementById('shutter');
 let switchBtn = document.getElementById('switch');
+let errorMessage = document.getElementById('error-message');
 let currentStream;
 let usingFrontCamera = false;
 
@@ -19,31 +20,16 @@ let isRecording = false;
 let pressTimer;
 let longPressThreshold = 500;
 
-switchBtn.innerHTML = `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-<path d="M370.7 133.3C342 104.6 300.9 88 256 88c-66.3 0-122.7 40.2-146.7 97.3L64 160v128h128l-48-48c15.3-51.1 62.5-88 118-88 33.4 0 63.7 13.1 85.7 34.3l23-23zm-229.4 245.4C170 407.4 211.1 424 256 424c66.3 0 122.7-40.2 146.7-97.3L448 352V224H320l48 48c-15.3 51.1-62.5 88-118 88-33.4 0-63.7-13.1-85.7-34.3l-23 23z"/>
-</svg>
-`;
-
-switchBtn.style.cssText = `
-position: absolute !important;
-bottom: 20px !important;
-right: 20px !important;
-width: 50px !important;
-height: 50px !important;
-background: rgba(0,0,0,0.5) !important;
-border-radius: 50% !important;
-display: flex !important;
-align-items: center !important;
-justify-content: center !important;
-cursor: pointer !important;
-z-index: 10 !important;
-outline: none !important;
-border: none !important;
-`;
-
-switchBtn.style.webkitTapHighlightColor = 'transparent';
-switchBtn.style.userSelect = 'none';
+function showError(message) {
+    if (errorMessage) {
+        errorMessage.textContent = message;
+        errorMessage.style.display = 'block';
+        setTimeout(() => {
+            errorMessage.style.display = 'none';
+        }, 5000);
+    }
+    console.error(message);
+}
 
 function createShader(gl, type, source) {
     let shader = gl.createShader(type);
@@ -80,7 +66,7 @@ function cacheUniformLocations() {
 
 function initWebGL() {
     if (!gl) {
-        console.error('WebGL non supportato');
+        showError('WebGL non supportato dal tuo browser');
         return false;
     }
     
@@ -88,11 +74,13 @@ function initWebGL() {
     let fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
     
     if (!vertexShader || !fragmentShader) {
+        showError('Errore nella compilazione degli shader');
         return false;
     }
     
     program = createProgram(gl, vertexShader, fragmentShader);
     if (!program) {
+        showError('Errore nella creazione del programma WebGL');
         return false;
     }
     
@@ -126,6 +114,30 @@ function initWebGL() {
     return true;
 }
 
+function createDefaultLUT() {
+    let size = 512;
+    let canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    let ctx = canvas.getContext('2d');
+    
+    let imageData = ctx.createImageData(size, size);
+    let data = imageData.data;
+    
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            let index = (y * size + x) * 4;
+            data[index] = x / size * 255;
+            data[index + 1] = y / size * 255;
+            data[index + 2] = 128;
+            data[index + 3] = 255;
+        }
+    }
+    
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+}
+
 function loadLUT() {
     lutTexture = gl.createTexture();
     gl.activeTexture(gl.TEXTURE1);
@@ -146,7 +158,17 @@ function loadLUT() {
         console.log('LUT caricata');
     };
     lutImage.onerror = function() {
-        console.error('Errore caricamento LUT');
+        console.warn('LUT non trovata, uso LUT di default');
+        let defaultLUT = createDefaultLUT();
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, lutTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, defaultLUT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.uniform1i(uniformLocations.lut, 1);
+        isLutLoaded = true;
     };
     lutImage.src = 'lut.png';
 }
@@ -192,7 +214,10 @@ function startCamera() {
                 render();
             }
         };
-    }).catch(err => console.error('Errore fotocamera:', err));
+    }).catch(err => {
+        console.error('Errore fotocamera:', err);
+        showError('Impossibile accedere alla fotocamera');
+    });
 }
 
 function resizeCanvas() {
@@ -222,7 +247,7 @@ function resizeCanvas() {
 
 function capturePhoto() {
     if (!isLutLoaded) {
-        console.error('LUT non ancora caricata');
+        showError('LUT non ancora caricata');
         return;
     }
     
@@ -232,7 +257,7 @@ function capturePhoto() {
     let captureGl = captureCanvas.getContext('webgl', { preserveDrawingBuffer: true });
     
     if (!captureGl) {
-        console.error('Impossibile creare contesto WebGL per cattura');
+        showError('Impossibile creare contesto WebGL per cattura');
         return;
     }
     
@@ -273,7 +298,31 @@ function capturePhoto() {
         captureGl.texImage2D(captureGl.TEXTURE_2D, 0, captureGl.RGB, captureGl.RGB, captureGl.UNSIGNED_BYTE, lutImage);
         captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_S, captureGl.CLAMP_TO_EDGE);
         captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_T, captureGl.CLAMP_TO_EDGE);
-        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.MIN_FILTER, captureGl.LINEAR);
+        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MIN_FILTER, captureGl.LINEAR);
+        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MAG_FILTER, captureGl.LINEAR);
+        
+        captureGl.viewport(0, 0, captureCanvas.width, captureCanvas.height);
+        captureGl.clear(captureGl.COLOR_BUFFER_BIT);
+        
+        captureGl.uniform1i(captureGl.getUniformLocation(captureProgram, 'u_image'), 0);
+        captureGl.uniform1i(captureGl.getUniformLocation(captureProgram, 'u_lut'), 1);
+        captureGl.uniform1f(captureGl.getUniformLocation(captureProgram, 'u_flipX'), usingFrontCamera ? -1.0 : 1.0);
+        
+        captureGl.drawArrays(captureGl.TRIANGLE_STRIP, 0, 4);
+        
+        let link = document.createElement('a');
+        link.href = captureCanvas.toDataURL('image/jpeg', 0.95);
+        link.download = `photo_${Date.now()}.jpg`;
+        link.click();
+    };
+    lutImage.onerror = function() {
+        let defaultLUT = createDefaultLUT();
+        captureGl.activeTexture(captureGl.TEXTURE1);
+        captureGl.bindTexture(captureGl.TEXTURE_2D, captureLutTexture);
+        captureGl.texImage2D(captureGl.TEXTURE_2D, 0, captureGl.RGB, captureGl.RGB, captureGl.UNSIGNED_BYTE, defaultLUT);
+        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_S, captureGl.CLAMP_TO_EDGE);
+        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_T, captureGl.CLAMP_TO_EDGE);
+        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MIN_FILTER, captureGl.LINEAR);
         captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MAG_FILTER, captureGl.LINEAR);
         
         captureGl.viewport(0, 0, captureCanvas.width, captureCanvas.height);
@@ -345,14 +394,14 @@ function startRecording() {
     
     mediaRecorder.start();
     isRecording = true;
-    shutter.style.background = '#ff4444';
+    shutter.classList.add('recording');
 }
 
 function stopRecording() {
     if (mediaRecorder && isRecording) {
         mediaRecorder.stop();
         isRecording = false;
-        shutter.style.background = 'white';
+        shutter.classList.remove('recording');
     }
 }
 
@@ -388,34 +437,33 @@ function handleVisibilityChange() {
     }
 }
 
-// Event Listeners
-switchBtn.addEventListener('click', function() {
-    usingFrontCamera = !usingFrontCamera;
-    startCamera();
-});
+if (switchBtn) {
+    switchBtn.addEventListener('click', function() {
+        usingFrontCamera = !usingFrontCamera;
+        startCamera();
+    });
+}
 
-// Gestione eventi touch e mouse per lo shutter
-shutter.addEventListener('mousedown', handlePressStart);
-shutter.addEventListener('mouseup', handlePressEnd);
-shutter.addEventListener('mouseleave', handlePressEnd); // Aggiunto per gestire quando il mouse esce dal bottone
+if (shutter) {
+    shutter.addEventListener('mousedown', handlePressStart);
+    shutter.addEventListener('mouseup', handlePressEnd);
+    shutter.addEventListener('mouseleave', handlePressEnd);
 
-shutter.addEventListener('touchstart', handlePressStart);
-shutter.addEventListener('touchend', handlePressEnd);
-shutter.addEventListener('touchcancel', handlePressEnd); // Aggiunto per gestire l'annullamento del touch
+    shutter.addEventListener('touchstart', handlePressStart);
+    shutter.addEventListener('touchend', handlePressEnd);
+    shutter.addEventListener('touchcancel', handlePressEnd);
+}
 
-// Event listener per il ridimensionamento della finestra
 let resizeTimeout;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(resizeCanvas, 100);
 });
 
-// Event listener per il cambio di visibilità della pagina
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
-// Inizializzazione
 if (initWebGL()) {
     startCamera();
 } else {
-    console.error('Impossibile inizializzare WebGL');
+    showError('Impossibile inizializzare WebGL');
 }
