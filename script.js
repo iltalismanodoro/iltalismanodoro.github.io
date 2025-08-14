@@ -137,10 +137,18 @@ function drawFrame() {
 
 video.addEventListener('play', () => initWebGL());
 
+// Shutter aggiornato per evitare immagine nera su mobile
 shutter.addEventListener('click', () => {
   if(video.readyState < 2) return;
+
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = canvas.width;
+  tempCanvas.height = canvas.height;
+  const tempCtx = tempCanvas.getContext('2d');
+  tempCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height);
+
   const link = document.createElement('a');
   link.download = `photo_${Date.now()}.jpg`;
-  link.href = canvas.toDataURL('image/jpeg', 0.95);
+  link.href = tempCanvas.toDataURL('image/jpeg', 0.95);
   link.click();
 });
