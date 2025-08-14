@@ -32,34 +32,23 @@ switchBtn.addEventListener('click', () => {
 startCamera(currentFacing);
 
 function resizeCanvas() {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const targetRatio = 9 / 16;
-  let width, height;
+  if (!video.videoWidth || !video.videoHeight) return;
 
-  if (vw / vh > targetRatio) {
-    height = vh;
-    width = vh * targetRatio;
-  } else {
-    width = vw;
-    height = vw / targetRatio;
-  }
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
 
-  canvas.width = width;
-  canvas.height = height;
-  canvas.style.width = width + 'px';
-  canvas.style.height = height + 'px';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
   canvas.style.top = '50%';
   canvas.style.left = '50%';
   canvas.style.transform = video.classList.contains('front') 
     ? 'translate(-50%, -50%) scaleX(-1)' 
     : 'translate(-50%, -50%)';
 
-  if (gl) gl.viewport(0, 0, width, height);
+  if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
 }
 
 window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
 
 function createShader(gl, type, source) {
   const shader = gl.createShader(type);
@@ -135,9 +124,9 @@ function drawFrame() {
   requestAnimationFrame(drawFrame);
 }
 
-video.addEventListener('play', () => initWebGL());
+video.addEventListener('play', () => resizeCanvas() || initWebGL());
 
-// Shutter aggiornato per evitare immagine nera su mobile
+// Shutter aggiornato per evitare immagine nera
 shutter.addEventListener('click', () => {
   if(video.readyState < 2) return;
 
