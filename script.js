@@ -11,9 +11,12 @@ let positionBuffer;
 let lutTexture;
 let videoTexture;
 let animationId;
+let uniformLocations = {};
+let isLutLoaded = false;
+
 switchBtn.innerHTML = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-<path d="M370.7 133.3C342 104.6 300.9 88 256 88c-66.3 0-122.7 40.2-146.7 97.3L64 160v128h128l-48-48c15.3-51.1 62.5-88 118-88 33.4 0 63.7 13.1 85.7 34.3l23-23zm-229.4 245.4C170 407.4 211.1 424 256 424c66.3 0 122.7-40.2 146.7-97.3L448 352V224H320l48 48c-15.3 51.1-62.5 88-118 88-33.4 0-63.7-13.1-85.7-34.3l-23 23z"/>
+<path d="M370.7 133.3C342 104.6 300.9 88 256 88c-66.3 0-122.7 40.2-146.7 97.3L64 160v128h128l-48-48c15.3-51.1 62.5-88 118-88 33.4 0 63.7 13.1 85.7 34.3l23-23zm-229.4 245.4C170 407.4 211.1 424 256 424c66.3 0 122.7-40.2 146.7 97.3L448 352V224H320l48 48c-15.3 51.1-62.5 88-118 88-33.4 0-63.7-13.1-85.7-34.3l-23 23z"/>
 </svg>
 `;
 
@@ -22,7 +25,7 @@ switchBtn.style.bottom = '20px';
 switchBtn.style.right = '20px';
 switchBtn.style.top = 'auto';
 
-function createShader(type, source) {
+function createShader(gl, type, source) {
     let shader = gl.createShader(type);
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
@@ -35,7 +38,7 @@ function createShader(type, source) {
     return shader;
 }
 
-function createProgram(vertexShader, fragmentShader) {
+function createProgram(gl, vertexShader, fragmentShader) {
     let program = gl.createProgram();
     gl.attachShader(program, vertexShader);
     gl.attachShader(program, fragmentShader);
@@ -49,52 +52,55 @@ function createProgram(vertexShader, fragmentShader) {
     return program;
 }
 
+function cacheUniformLocations() {
+    uniformLocations.image = gl.getUniformLocation(program, 'u_image');
+    uniformLocations.lut = gl.getUniformLocation(program, 'u_lut');
+    uniformLocations.flipX = gl.getUniformLocation(program, 'u_flipX');
+}
+
 function initWebGL() {
     if (!gl) {
         console.error('WebGL non supportato');
         return false;
     }
     
-    // Crea shader
-    let vertexShader = createShader(gl.VERTEX_SHADER, vertexShaderSource);
-    let fragmentShader = createShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+    let vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+    let fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
     
     if (!vertexShader || !fragmentShader) {
         return false;
     }
     
-    // Crea program
-    program = createProgram(vertexShader, fragmentShader);
+    program = createProgram(gl, vertexShader, fragmentShader);
     if (!program) {
         return false;
     }
     
-    // Setup attributi e uniform
+    gl.useProgram(program);
+    cacheUniformLocations();
+    
     let positionLocation = gl.getAttribLocation(program, 'a_position');
     
-    // Crea buffer per il quad fullscreen
     positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-        -1, -1,
-         1, -1,
-        -1,  1,
-         1,  1
+        -1, -1, 1, -1, -1, 1, 1, 1
     ]), gl.STATIC_DRAW);
     
-    // Enable attributo position
     gl.enableVertexAttribArray(positionLocation);
     gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
     
-    // Crea texture per il video
     videoTexture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, videoTexture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     
-    // Carica LUT
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+    gl.uniform1i(uniformLocations.image, 0);
+    
     loadLUT();
     
     return true;
@@ -102,17 +108,21 @@ function initWebGL() {
 
 function loadLUT() {
     lutTexture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, lutTexture);
     
     let lutImage = new Image();
     lutImage.crossOrigin = 'anonymous';
     lutImage.onload = function() {
+        gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, lutTexture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, lutImage);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.uniform1i(uniformLocations.lut, 1);
+        isLutLoaded = true;
         console.log('LUT caricata');
     };
     lutImage.onerror = function() {
@@ -122,32 +132,15 @@ function loadLUT() {
 }
 
 function render() {
-    if (!video.videoWidth || !video.videoHeight) {
+    if (!video.videoWidth || !video.videoHeight || !isLutLoaded) {
         animationId = requestAnimationFrame(render);
         return;
     }
     
-    gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+    gl.activeTexture(gl.TEXTURE0);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
     
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    
-    gl.useProgram(program);
-    
-    let flipLocation = gl.getUniformLocation(program, 'u_flipX');
-    if (flipLocation) {
-        gl.uniform1f(flipLocation, usingFrontCamera ? -1.0 : 1.0);
-    }
-    
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-    gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
-    
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, lutTexture);
-    gl.uniform1i(gl.getUniformLocation(program, 'u_lut'), 1);
+    gl.uniform1f(uniformLocations.flipX, usingFrontCamera ? -1.0 : 1.0);
     
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     
@@ -159,15 +152,17 @@ function startCamera() {
         currentStream.getTracks().forEach(track => track.stop());
     }
     
-    navigator.mediaDevices.getUserMedia({
+    let constraints = {
         video: { 
             facingMode: usingFrontCamera ? 'user' : 'environment',
-            width: { ideal: 1920, min: 1280 },
-            height: { ideal: 1080, min: 720 },
-            frameRate: { ideal: 30 }
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30, max: 60 }
         },
         audio: false
-    }).then(stream => {
+    };
+    
+    navigator.mediaDevices.getUserMedia(constraints).then(stream => {
         currentStream = stream;
         video.srcObject = stream;
         video.onloadedmetadata = () => {
@@ -201,66 +196,20 @@ function resizeCanvas() {
         canvas.style.width = `${canvas.width}px`;
         canvas.style.height = `${canvas.height}px`;
         
-        if (gl) {
-            gl.viewport(0, 0, canvas.width, canvas.height);
-        }
+        gl.viewport(0, 0, canvas.width, canvas.height);
     }
 }
 
 function capturePhoto() {
-    let tempCanvas = document.createElement('canvas');
-    tempCanvas.width = video.videoWidth;
-    tempCanvas.height = video.videoHeight;
-    let tempGl = tempCanvas.getContext('webgl');
-    
-    if (!tempGl) {
-        console.error('Impossibile creare contesto WebGL temporaneo');
+    if (!isLutLoaded) {
+        console.error('LUT non ancora caricata');
         return;
     }
     
-    let tempVertexShader = createShader(tempGl.VERTEX_SHADER, vertexShaderSource);
-    let tempFragmentShader = createShader(tempGl.FRAGMENT_SHADER, fragmentShaderSource);
-    let tempProgram = createProgram(tempVertexShader, tempFragmentShader);
-    
-    let tempPositionBuffer = tempGl.createBuffer();
-    tempGl.bindBuffer(tempGl.ARRAY_BUFFER, tempPositionBuffer);
-    tempGl.bufferData(tempGl.ARRAY_BUFFER, new Float32Array([
-        -1, -1, 1, -1, -1, 1, 1, 1
-    ]), tempGl.STATIC_DRAW);
-    
-    let positionLocation = tempGl.getAttribLocation(tempProgram, 'a_position');
-    tempGl.enableVertexAttribArray(positionLocation);
-    tempGl.vertexAttribPointer(positionLocation, 2, tempGl.FLOAT, false, 0, 0);
-    
-    let tempVideoTexture = tempGl.createTexture();
-    tempGl.bindTexture(tempGl.TEXTURE_2D, tempVideoTexture);
-    tempGl.texImage2D(tempGl.TEXTURE_2D, 0, tempGl.RGB, tempGl.RGB, tempGl.UNSIGNED_BYTE, video);
-    tempGl.texParameteri(tempGl.TEXTURE_2D, tempGl.TEXTURE_WRAP_S, tempGl.CLAMP_TO_EDGE);
-    tempGl.texParameteri(tempGl.TEXTURE_2D, tempGl.TEXTURE_WRAP_T, tempGl.CLAMP_TO_EDGE);
-    tempGl.texParameteri(tempGl.TEXTURE_2D, tempGl.TEXTURE_MIN_FILTER, tempGl.LINEAR);
-    tempGl.texParameteri(tempGl.TEXTURE_2D, tempGl.TEXTURE_MAG_FILTER, tempGl.LINEAR);
-    
-    let tempLutTexture = tempGl.createTexture();
-    tempGl.bindTexture(tempGl.TEXTURE_2D, tempLutTexture);
-    let lutCanvas = document.createElement('canvas');
-    let lutCtx = lutCanvas.getContext('2d');
-    
-    tempGl.viewport(0, 0, tempCanvas.width, tempCanvas.height);
-    tempGl.clear(tempGl.COLOR_BUFFER_BIT);
-    tempGl.useProgram(tempProgram);
-    
-    tempGl.activeTexture(tempGl.TEXTURE0);
-    tempGl.bindTexture(tempGl.TEXTURE_2D, tempVideoTexture);
-    tempGl.uniform1i(tempGl.getUniformLocation(tempProgram, 'u_image'), 0);
-    
-    tempGl.activeTexture(tempGl.TEXTURE1);
-    tempGl.bindTexture(tempGl.TEXTURE_2D, lutTexture);
-    tempGl.uniform1i(tempGl.getUniformLocation(tempProgram, 'u_lut'), 1);
-    
-    tempGl.drawArrays(tempGl.TRIANGLE_STRIP, 0, 4);
+    gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(canvas.width * canvas.height * 4));
     
     let link = document.createElement('a');
-    link.href = tempCanvas.toDataURL('image/jpeg', 1.0);
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
     link.download = `photo_${Date.now()}.jpg`;
     link.click();
 }
@@ -272,7 +221,11 @@ switchBtn.addEventListener('click', () => {
 
 shutter.addEventListener('click', capturePhoto);
 
-window.addEventListener('resize', resizeCanvas);
+let resizeTimeout;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(resizeCanvas, 100);
+});
 
 if (initWebGL()) {
     startCamera();
