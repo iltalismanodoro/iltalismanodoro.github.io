@@ -21,6 +21,29 @@ let isRecording = false;
 let pressTimer;
 let longPressThreshold = 500;
 
+// Funzione per verificare le capacità della fotocamera
+async function checkCameraCapabilities() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        console.log(`Fotocamere disponibili: ${videoDevices.length}`);
+        
+        // Testa le capacità supportate
+        const testConstraints = {
+            video: {
+                facingMode: usingFrontCamera ? 'user' : 'environment'
+            }
+        };
+        
+        const capabilities = await navigator.mediaDevices.getSupportedConstraints();
+        console.log('Capabilities supportate:', capabilities);
+        
+    } catch (err) {
+        console.error('Errore nel controllo capabilities:', err);
+    }
+}
+
 // Error handling function
 function showError(message) {
     if (errorMessage) {
@@ -204,11 +227,17 @@ function startCamera() {
     let constraints = {
         video: { 
             facingMode: usingFrontCamera ? 'user' : 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            frameRate: { ideal: 30 }
+            width: { ideal: 4096, min: 1920 },        // 4K ideale, Full HD minimo
+            height: { ideal: 2160, min: 1080 },       // 4K ideale, Full HD minimo
+            frameRate: { ideal: 60, min: 30 },        // 60fps ideale, 30fps minimo
+            aspectRatio: { ideal: 16/9 }
         },
-        audio: needsAudio
+        audio: needsAudio ? {
+            sampleRate: 48000,          // Alta qualità audio
+            channelCount: 2,            // Stereo
+            echoCancellation: true,     // Cancellazione eco
+            noiseSuppression: true      // Riduzione rumore
+        } : false
     };
     
     navigator.mediaDevices.getUserMedia(constraints).then(stream => {
@@ -221,9 +250,42 @@ function startCamera() {
             if (!animationId) {
                 render();
             }
+            // Log della risoluzione effettiva ottenuta
+            console.log(`Risoluzione video: ${video.videoWidth}x${video.videoHeight}`);
         };
     }).catch(err => {
         console.error('Errore fotocamera:', err);
+        // Fallback con qualità ridotta se la richiesta 4K fallisce
+        tryLowerQuality();
+    });
+}
+
+function tryLowerQuality() {
+    console.log('Tentativo con qualità ridotta...');
+    let constraints = {
+        video: { 
+            facingMode: usingFrontCamera ? 'user' : 'environment',
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1080, min: 720 },
+            frameRate: { ideal: 30 }
+        },
+        audio: typeof MediaRecorder !== 'undefined'
+    };
+    
+    navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+        currentStream = stream;
+        video.srcObject = stream;
+        video.muted = true;
+        video.onloadedmetadata = () => {
+            video.play();
+            resizeCanvas();
+            if (!animationId) {
+                render();
+            }
+            console.log(`Risoluzione fallback: ${video.videoWidth}x${video.videoHeight}`);
+        };
+    }).catch(err => {
+        console.error('Errore anche con qualità ridotta:', err);
         showError('Impossibile accedere alla fotocamera');
     });
 }
@@ -319,7 +381,7 @@ function capturePhoto() {
         captureGl.drawArrays(captureGl.TRIANGLE_STRIP, 0, 4);
         
         let link = document.createElement('a');
-        link.href = captureCanvas.toDataURL('image/jpeg', 0.95);
+        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);  // Qualità JPEG 98%
         link.download = `photo_${Date.now()}.jpg`;
         link.click();
     };
@@ -344,7 +406,7 @@ function capturePhoto() {
         captureGl.drawArrays(captureGl.TRIANGLE_STRIP, 0, 4);
         
         let link = document.createElement('a');
-        link.href = captureCanvas.toDataURL('image/jpeg', 0.95);
+        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);  // Qualità JPEG 98%
         link.download = `photo_${Date.now()}.jpg`;
         link.click();
     };
@@ -372,16 +434,32 @@ function startRecording() {
     if (!currentStream) return;
     
     recordedChunks = [];
-    let canvasStream = canvas.captureStream(30);
+    let canvasStream = canvas.captureStream(60);  // 60 FPS per registrazione
     let audioTrack = currentStream.getAudioTracks()[0];
     
     if (audioTrack) {
         canvasStream.addTrack(audioTrack);
     }
     
-    mediaRecorder = new MediaRecorder(canvasStream, {
-        mimeType: 'video/webm'
-    });
+    // Opzioni per alta qualità video
+    let options = {
+        mimeType: 'video/webm;codecs=vp9',  // VP9 per migliore qualità
+        videoBitsPerSecond: 8000000         // 8 Mbps per alta qualità
+    };
+    
+    // Fallback se VP9 non è supportato
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options.mimeType = 'video/webm;codecs=vp8';
+        console.log('VP9 non supportato, uso VP8');
+    }
+    
+    // Ulteriore fallback
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/webm' };
+        console.log('Uso codec di default');
+    }
+    
+    mediaRecorder = new MediaRecorder(canvasStream, options);
     
     mediaRecorder.ondataavailable = function(event) {
         if (event.data.size > 0) {
@@ -477,6 +555,7 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
 
 // Inizializzazione
 if (initWebGL()) {
+    checkCameraCapabilities();  // Controlla le capacità prima di iniziare
     startCamera();
 } else {
     showError('Impossibile inizializzare WebGL');
