@@ -2,7 +2,9 @@ const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const shutter = document.getElementById('shutter');
 const switchBtn = document.getElementById('switch');
+
 let gl, program, positionBuffer, imageLocation, lutLocation;
+let videoTexture;
 let currentFacing = 'environment';
 let stream;
 
@@ -10,7 +12,16 @@ async function startCamera(facingMode) {
   if (stream) stream.getTracks().forEach(track => track.stop());
   stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: false });
   video.srcObject = stream;
-  video.play();
+  await video.play();
+
+  if (facingMode === 'user') {
+    video.classList.add('front');
+    canvas.classList.add('front');
+  } else {
+    video.classList.remove('front');
+    canvas.classList.remove('front');
+  }
+  resizeCanvas();
 }
 
 switchBtn.addEventListener('click', () => {
@@ -40,7 +51,9 @@ function resizeCanvas() {
   canvas.style.height = height + 'px';
   canvas.style.top = '50%';
   canvas.style.left = '50%';
-  canvas.style.transform = 'translate(-50%, -50%)';
+  canvas.style.transform = video.classList.contains('front') 
+    ? 'translate(-50%, -50%) scaleX(-1)' 
+    : 'translate(-50%, -50%)';
 
   if (gl) gl.viewport(0, 0, width, height);
 }
@@ -87,6 +100,13 @@ function initWebGL() {
   imageLocation = gl.getUniformLocation(program, 'u_image');
   lutLocation = gl.getUniformLocation(program, 'u_lut');
 
+  videoTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
   const lutImage = new Image();
   lutImage.src = 'luts/film.png';
   lutImage.onload = () => {
@@ -103,15 +123,9 @@ function initWebGL() {
 }
 
 function drawFrame() {
-  const videoTexture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
   gl.uniform1i(imageLocation, 0);
 
   gl.clearColor(0,0,0,1);
@@ -124,6 +138,7 @@ function drawFrame() {
 video.addEventListener('play', () => initWebGL());
 
 shutter.addEventListener('click', () => {
+  if(video.readyState < 2) return;
   const link = document.createElement('a');
   link.download = `photo_${Date.now()}.jpg`;
   link.href = canvas.toDataURL('image/jpeg', 0.95);
