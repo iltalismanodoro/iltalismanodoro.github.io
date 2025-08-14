@@ -135,13 +135,13 @@ html, body {
     #shutter {
         width: 70px;
         height: 70px;
-        bottom: 20px;
+        bottom: 40px;
     }
     
     #switch {
         width: 45px;
         height: 45px;
-        bottom: 20px;
+        bottom: 45px;
         right: 20px;
     }
     
