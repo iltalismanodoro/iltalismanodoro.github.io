@@ -1,3 +1,4 @@
+// Variables
 let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
 let gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
@@ -20,6 +21,7 @@ let isRecording = false;
 let pressTimer;
 let longPressThreshold = 500;
 
+// Error handling function
 function showError(message) {
     if (errorMessage) {
         errorMessage.textContent = message;
@@ -115,6 +117,7 @@ function initWebGL() {
 }
 
 function createDefaultLUT() {
+    // Crea una LUT di default se il file non viene trovato
     let size = 512;
     let canvas = document.createElement('canvas');
     canvas.width = size;
@@ -127,10 +130,10 @@ function createDefaultLUT() {
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
             let index = (y * size + x) * 4;
-            data[index] = x / size * 255;
-            data[index + 1] = y / size * 255;
-            data[index + 2] = 128;
-            data[index + 3] = 255;
+            data[index] = x / size * 255;     // R
+            data[index + 1] = y / size * 255; // G  
+            data[index + 2] = 128;            // B
+            data[index + 3] = 255;            // A
         }
     }
     
@@ -159,6 +162,7 @@ function loadLUT() {
     };
     lutImage.onerror = function() {
         console.warn('LUT non trovata, uso LUT di default');
+        // Usa una LUT di default se il file non viene trovato
         let defaultLUT = createDefaultLUT();
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, lutTexture);
@@ -194,6 +198,9 @@ function startCamera() {
         currentStream.getTracks().forEach(track => track.stop());
     }
     
+    // Richiedi audio solo se supporta MediaRecorder
+    let needsAudio = typeof MediaRecorder !== 'undefined';
+    
     let constraints = {
         video: { 
             facingMode: usingFrontCamera ? 'user' : 'environment',
@@ -201,12 +208,13 @@ function startCamera() {
             height: { ideal: 720 },
             frameRate: { ideal: 30 }
         },
-        audio: true
+        audio: needsAudio
     };
     
     navigator.mediaDevices.getUserMedia(constraints).then(stream => {
         currentStream = stream;
         video.srcObject = stream;
+        video.muted = true; // Silenzia l'anteprima video
         video.onloadedmetadata = () => {
             video.play();
             resizeCanvas();
@@ -316,6 +324,7 @@ function capturePhoto() {
         link.click();
     };
     lutImage.onerror = function() {
+        // Fallback con LUT di default
         let defaultLUT = createDefaultLUT();
         captureGl.activeTexture(captureGl.TEXTURE1);
         captureGl.bindTexture(captureGl.TEXTURE_2D, captureLutTexture);
@@ -437,6 +446,7 @@ function handleVisibilityChange() {
     }
 }
 
+// Event Listeners
 if (switchBtn) {
     switchBtn.addEventListener('click', function() {
         usingFrontCamera = !usingFrontCamera;
@@ -444,6 +454,7 @@ if (switchBtn) {
     });
 }
 
+// Gestione eventi touch e mouse per lo shutter
 if (shutter) {
     shutter.addEventListener('mousedown', handlePressStart);
     shutter.addEventListener('mouseup', handlePressEnd);
@@ -454,14 +465,17 @@ if (shutter) {
     shutter.addEventListener('touchcancel', handlePressEnd);
 }
 
+// Event listener per il ridimensionamento della finestra
 let resizeTimeout;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(resizeCanvas, 100);
 });
 
+// Event listener per il cambio di visibilità della pagina
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
+// Inizializzazione
 if (initWebGL()) {
     startCamera();
 } else {
