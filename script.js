@@ -91,8 +91,8 @@ function initWebGL() {
     gl.bindTexture(gl.TEXTURE_2D, videoTexture);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     
     // Carica LUT
     loadLUT();
@@ -136,6 +136,11 @@ function render() {
     
     gl.useProgram(program);
     
+    let flipLocation = gl.getUniformLocation(program, 'u_flipX');
+    if (flipLocation) {
+        gl.uniform1f(flipLocation, usingFrontCamera ? -1.0 : 1.0);
+    }
+    
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, videoTexture);
     gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
@@ -157,8 +162,9 @@ function startCamera() {
     navigator.mediaDevices.getUserMedia({
         video: { 
             facingMode: usingFrontCamera ? 'user' : 'environment',
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
+            width: { ideal: 1920, min: 1280 },
+            height: { ideal: 1080, min: 720 },
+            frameRate: { ideal: 30 }
         },
         audio: false
     }).then(stream => {
@@ -254,7 +260,7 @@ function capturePhoto() {
     tempGl.drawArrays(tempGl.TRIANGLE_STRIP, 0, 4);
     
     let link = document.createElement('a');
-    link.href = tempCanvas.toDataURL('image/jpeg', 0.9);
+    link.href = tempCanvas.toDataURL('image/jpeg', 1.0);
     link.download = `photo_${Date.now()}.jpg`;
     link.click();
 }
