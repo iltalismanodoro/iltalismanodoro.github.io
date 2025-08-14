@@ -16,6 +16,10 @@ video, #canvas {
   object-fit: cover;
 }
 
+video.front, #canvas.front {
+  transform: translate(-50%, -50%) scaleX(-1);
+}
+
 #shutter {
   position: absolute;
   bottom: 40px;
