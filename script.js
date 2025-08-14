@@ -13,17 +13,37 @@ let videoTexture;
 let animationId;
 let uniformLocations = {};
 let isLutLoaded = false;
+let mediaRecorder;
+let recordedChunks = [];
+let isRecording = false;
+let pressTimer;
+let longPressThreshold = 500;
 
 switchBtn.innerHTML = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-<path d="M370.7 133.3C342 104.6 300.9 88 256 88c-66.3 0-122.7 40.2-146.7 97.3L64 160v128h128l-48-48c15.3-51.1 62.5-88 118-88 33.4 0 63.7 13.1 85.7 34.3l23-23zm-229.4 245.4C170 407.4 211.1 424 256 424c66.3 0 122.7-40.2 146.7 97.3L448 352V224H320l48 48c-15.3 51.1-62.5 88-118 88-33.4 0-63.7-13.1-85.7-34.3l-23 23z"/>
+<path d="M370.7 133.3C342 104.6 300.9 88 256 88c-66.3 0-122.7 40.2-146.7 97.3L64 160v128h128l-48-48c15.3-51.1 62.5-88 118-88 33.4 0 63.7 13.1 85.7 34.3l23-23zm-229.4 245.4C170 407.4 211.1 424 256 424c66.3 0 122.7-40.2 146.7-97.3L448 352V224H320l48 48c-15.3 51.1-62.5 88-118 88-33.4 0-63.7-13.1-85.7-34.3l-23 23z"/>
 </svg>
 `;
 
-switchBtn.style.position = 'absolute';
-switchBtn.style.bottom = '20px';
-switchBtn.style.right = '20px';
-switchBtn.style.top = 'auto';
+switchBtn.style.cssText = `
+position: absolute !important;
+bottom: 20px !important;
+right: 20px !important;
+width: 50px !important;
+height: 50px !important;
+background: rgba(0,0,0,0.5) !important;
+border-radius: 50% !important;
+display: flex !important;
+align-items: center !important;
+justify-content: center !important;
+cursor: pointer !important;
+z-index: 10 !important;
+outline: none !important;
+border: none !important;
+`;
+
+switchBtn.style.webkitTapHighlightColor = 'transparent';
+switchBtn.style.userSelect = 'none';
 
 function createShader(gl, type, source) {
     let shader = gl.createShader(type);
@@ -155,11 +175,11 @@ function startCamera() {
     let constraints = {
         video: { 
             facingMode: usingFrontCamera ? 'user' : 'environment',
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
             frameRate: { ideal: 30 }
         },
-        audio: false
+        audio: true
     };
     
     navigator.mediaDevices.getUserMedia(constraints).then(stream => {
@@ -273,12 +293,74 @@ function capturePhoto() {
     lutImage.src = 'lut.png';
 }
 
+function handlePressStart() {
+    pressTimer = setTimeout(() => {
+        startRecording();
+    }, longPressThreshold);
+}
+
+function handlePressEnd() {
+    clearTimeout(pressTimer);
+    if (isRecording) {
+        stopRecording();
+    } else {
+        capturePhoto();
+    }
+}
+    if (!currentStream) return;
+    
+    recordedChunks = [];
+    let canvasStream = canvas.captureStream(30);
+    let audioTrack = currentStream.getAudioTracks()[0];
+    
+    if (audioTrack) {
+        canvasStream.addTrack(audioTrack);
+    }
+    
+    mediaRecorder = new MediaRecorder(canvasStream, {
+        mimeType: 'video/webm'
+    });
+    
+    mediaRecorder.ondataavailable = function(event) {
+        if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+        }
+    };
+    
+    mediaRecorder.onstop = function() {
+        let blob = new Blob(recordedChunks, {
+            type: 'video/webm'
+        });
+        let url = URL.createObjectURL(blob);
+        let a = document.createElement('a');
+        a.href = url;
+        a.download = `video_${Date.now()}.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+    
+    mediaRecorder.start();
+    isRecording = true;
+    shutter.style.background = '#ff4444';
+}
+
+function stopRecording() {
+    if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+        shutter.style.background = 'white';
+    }
+}
+
 switchBtn.addEventListener('click', () => {
     usingFrontCamera = !usingFrontCamera;
     startCamera();
 });
 
-shutter.addEventListener('click', capturePhoto);
+shutter.addEventListener('mousedown', handlePressStart);
+shutter.addEventListener('mouseup', handlePressEnd);
+shutter.addEventListener('touchstart', handlePressStart);
+shutter.addEventListener('touchend', handlePressEnd);
 
 let resizeTimeout;
 window.addEventListener('resize', () => {
