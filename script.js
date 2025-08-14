@@ -27,7 +27,7 @@ switchBtn.innerHTML = `
 
 switchBtn.style.cssText = `
 position: absolute !important;
-bottom: 20px !important;
+bottom: 40px !important;
 right: 20px !important;
 width: 50px !important;
 height: 50px !important;
