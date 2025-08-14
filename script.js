@@ -17,6 +17,11 @@ switchBtn.innerHTML = `
 </svg>
 `;
 
+switchBtn.style.position = 'absolute';
+switchBtn.style.bottom = '20px';
+switchBtn.style.right = '20px';
+switchBtn.style.top = 'auto';
+
 function createShader(type, source) {
     let shader = gl.createShader(type);
     gl.shaderSource(shader, source);
