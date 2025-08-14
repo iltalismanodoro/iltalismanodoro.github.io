@@ -1,83 +1,50 @@
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 const shutter = document.getElementById('shutter');
-let gl, program, positionBuffer, imageLocation, lutLocation;
+let gl;
 
-navigator.mediaDevices.getUserMedia({ video: { aspectRatio: 9/16 }, audio: false }).then(stream => {
-  video.srcObject = stream;
-});
+navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+  .then(stream => { video.srcObject = stream; video.play(); });
 
-function createShader(gl, type, source) {
-  const shader = gl.createShader(type);
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  return shader;
+function resizeCanvas() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const targetRatio = 9 / 16;
+  let width, height;
+
+  if (vw / vh > targetRatio) {
+    height = vh;
+    width = vh * targetRatio;
+  } else {
+    width = vw;
+    height = vw / targetRatio;
+  }
+
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+  canvas.width = width;
+  canvas.height = height;
+  if (gl) gl.viewport(0, 0, width, height);
 }
 
-function createProgram(gl, vertexShader, fragmentShader) {
-  const program = gl.createProgram();
-  gl.attachShader(program, vertexShader);
-  gl.attachShader(program, fragmentShader);
-  gl.linkProgram(program);
-  return program;
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Inizializzazione WebGL
+function initWebGL() {
+  gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
+  // Qui inserisci il resto della tua pipeline WebGL (shader, texture video, LUT, ecc.)
 }
 
 video.addEventListener('play', () => {
-  canvas.width = 1080;
-  canvas.height = 1920;
-  gl = canvas.getContext('webgl');
-  const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
-  const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-  program = createProgram(gl, vertexShader, fragmentShader);
-  gl.useProgram(program);
-
-  const positionLocation = gl.getAttribLocation(program, 'a_position');
-  positionBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-    -1, -1,
-    1, -1,
-    -1, 1,
-    -1, 1,
-    1, -1,
-    1, 1,
-  ]), gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(positionLocation);
-  gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-  imageLocation = gl.getUniformLocation(program, 'u_image');
-  lutLocation = gl.getUniformLocation(program, 'u_lut');
-
-  const lutImage = new Image();
-  lutImage.src = 'luts/film.png';
-  lutImage.onload = () => {
-    const lutTexture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, lutTexture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, lutImage);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    drawFrame();
-  };
+  initWebGL();
+  requestAnimationFrame(drawFrame); // drawFrame contiene il render loop WebGL
 });
 
-function drawFrame() {
-  const videoTexture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-  gl.uniform1i(imageLocation, 0);
-  gl.activeTexture(gl.TEXTURE1);
-  gl.uniform1i(lutLocation, 1);
-  gl.drawArrays(gl.TRIANGLES, 0, 6);
-  requestAnimationFrame(drawFrame);
-}
-
+// Salvataggio automatico all'evento click del pulsante
 shutter.addEventListener('click', () => {
   const link = document.createElement('a');
-  link.download = 'photo.png';
-  link.href = canvas.toDataURL('image/png');
+  link.download = `photo_${Date.now()}.jpg`;
+  link.href = canvas.toDataURL('image/jpeg', 0.95);
   link.click();
 });
