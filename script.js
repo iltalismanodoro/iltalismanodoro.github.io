@@ -1,7 +1,20 @@
-// Variables
 let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
-let gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+let gl = canvas.getContext('webgl', {
+    antialias: true,
+    alpha: false,
+    depth: false,
+    stencil: false,
+    preserveDrawingBuffer: true,
+    powerPreference: 'high-performance'
+}) || canvas.getContext('experimental-webgl', {
+    antialias: true,
+    alpha: false,
+    depth: false,
+    stencil: false,
+    preserveDrawingBuffer: true,
+    powerPreference: 'high-performance'
+});
 let shutter = document.getElementById('shutter');
 let switchBtn = document.getElementById('switch');
 let errorMessage = document.getElementById('error-message');
@@ -21,7 +34,6 @@ let isRecording = false;
 let pressTimer;
 let longPressThreshold = 500;
 
-// Funzione per verificare le capacità della fotocamera
 async function checkCameraCapabilities() {
     try {
         const devices = await navigator.mediaDevices.enumerateDevices();
@@ -29,7 +41,6 @@ async function checkCameraCapabilities() {
         
         console.log(`Fotocamere disponibili: ${videoDevices.length}`);
         
-        // Testa le capacità supportate
         const testConstraints = {
             video: {
                 facingMode: usingFrontCamera ? 'user' : 'environment'
@@ -44,7 +55,6 @@ async function checkCameraCapabilities() {
     }
 }
 
-// Error handling function
 function showError(message) {
     if (errorMessage) {
         errorMessage.textContent = message;
@@ -87,6 +97,7 @@ function cacheUniformLocations() {
     uniformLocations.image = gl.getUniformLocation(program, 'u_image');
     uniformLocations.lut = gl.getUniformLocation(program, 'u_lut');
     uniformLocations.flipX = gl.getUniformLocation(program, 'u_flipX');
+    uniformLocations.imageSize = gl.getUniformLocation(program, 'u_imageSize');
 }
 
 function initWebGL() {
@@ -140,7 +151,6 @@ function initWebGL() {
 }
 
 function createDefaultLUT() {
-    // Crea una LUT di default se il file non viene trovato
     let size = 512;
     let canvas = document.createElement('canvas');
     canvas.width = size;
@@ -153,10 +163,10 @@ function createDefaultLUT() {
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
             let index = (y * size + x) * 4;
-            data[index] = x / size * 255;     // R
-            data[index + 1] = y / size * 255; // G  
-            data[index + 2] = 128;            // B
-            data[index + 3] = 255;            // A
+            data[index] = x / size * 255;
+            data[index + 1] = y / size * 255;
+            data[index + 2] = 128;
+            data[index + 3] = 255;
         }
     }
     
@@ -185,7 +195,6 @@ function loadLUT() {
     };
     lutImage.onerror = function() {
         console.warn('LUT non trovata, uso LUT di default');
-        // Usa una LUT di default se il file non viene trovato
         let defaultLUT = createDefaultLUT();
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, lutTexture);
@@ -210,6 +219,7 @@ function render() {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
     
     gl.uniform1f(uniformLocations.flipX, usingFrontCamera ? -1.0 : 1.0);
+    gl.uniform2f(uniformLocations.imageSize, video.videoWidth, video.videoHeight);
     
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     
@@ -221,41 +231,38 @@ function startCamera() {
         currentStream.getTracks().forEach(track => track.stop());
     }
     
-    // Richiedi audio solo se supporta MediaRecorder
     let needsAudio = typeof MediaRecorder !== 'undefined';
     
     let constraints = {
         video: { 
             facingMode: usingFrontCamera ? 'user' : 'environment',
-            width: { ideal: 4096, min: 1920 },        // 4K ideale, Full HD minimo
-            height: { ideal: 2160, min: 1080 },       // 4K ideale, Full HD minimo
-            frameRate: { ideal: 60, min: 30 },        // 60fps ideale, 30fps minimo
+            width: { ideal: 4096, min: 1920 },
+            height: { ideal: 2160, min: 1080 },
+            frameRate: { ideal: 60, min: 30 },
             aspectRatio: { ideal: 16/9 }
         },
         audio: needsAudio ? {
-            sampleRate: 48000,          // Alta qualità audio
-            channelCount: 2,            // Stereo
-            echoCancellation: true,     // Cancellazione eco
-            noiseSuppression: true      // Riduzione rumore
+            sampleRate: 48000,
+            channelCount: 2,
+            echoCancellation: true,
+            noiseSuppression: true
         } : false
     };
     
     navigator.mediaDevices.getUserMedia(constraints).then(stream => {
         currentStream = stream;
         video.srcObject = stream;
-        video.muted = true; // Silenzia l'anteprima video
+        video.muted = true;
         video.onloadedmetadata = () => {
             video.play();
             resizeCanvas();
             if (!animationId) {
                 render();
             }
-            // Log della risoluzione effettiva ottenuta
             console.log(`Risoluzione video: ${video.videoWidth}x${video.videoHeight}`);
         };
     }).catch(err => {
         console.error('Errore fotocamera:', err);
-        // Fallback con qualità ridotta se la richiesta 4K fallisce
         tryLowerQuality();
     });
 }
@@ -298,20 +305,28 @@ function resizeCanvas() {
         let aspect = vw / vh;
         let windowAspect = window.innerWidth / window.innerHeight;
         
+        let displayWidth, displayHeight;
         if (windowAspect > aspect) {
-            canvas.height = window.innerHeight;
-            canvas.width = window.innerHeight * aspect;
+            displayHeight = window.innerHeight;
+            displayWidth = window.innerHeight * aspect;
         } else {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerWidth / aspect;
+            displayWidth = window.innerWidth;
+            displayHeight = window.innerWidth / aspect;
         }
         
-        canvas.style.left = `${(window.innerWidth - canvas.width) / 2}px`;
-        canvas.style.top = `${(window.innerHeight - canvas.height) / 2}px`;
-        canvas.style.width = `${canvas.width}px`;
-        canvas.style.height = `${canvas.height}px`;
+        let pixelRatio = window.devicePixelRatio || 1;
+        
+        canvas.style.width = `${displayWidth}px`;
+        canvas.style.height = `${displayHeight}px`;
+        canvas.style.left = `${(window.innerWidth - displayWidth) / 2}px`;
+        canvas.style.top = `${(window.innerHeight - displayHeight) / 2}px`;
+        
+        canvas.width = displayWidth * pixelRatio;
+        canvas.height = displayHeight * pixelRatio;
         
         gl.viewport(0, 0, canvas.width, canvas.height);
+        
+        console.log(`Canvas: ${displayWidth}x${displayHeight} (display), ${canvas.width}x${canvas.height} (buffer), ratio: ${pixelRatio}`);
     }
 }
 
@@ -324,7 +339,12 @@ function capturePhoto() {
     let captureCanvas = document.createElement('canvas');
     captureCanvas.width = video.videoWidth;
     captureCanvas.height = video.videoHeight;
-    let captureGl = captureCanvas.getContext('webgl', { preserveDrawingBuffer: true });
+    let captureGl = captureCanvas.getContext('webgl', { 
+        preserveDrawingBuffer: true,
+        antialias: true,
+        alpha: false,
+        powerPreference: 'high-performance'
+    });
     
     if (!captureGl) {
         showError('Impossibile creare contesto WebGL per cattura');
@@ -381,12 +401,11 @@ function capturePhoto() {
         captureGl.drawArrays(captureGl.TRIANGLE_STRIP, 0, 4);
         
         let link = document.createElement('a');
-        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);  // Qualità JPEG 98%
+        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);
         link.download = `photo_${Date.now()}.jpg`;
         link.click();
     };
     lutImage.onerror = function() {
-        // Fallback con LUT di default
         let defaultLUT = createDefaultLUT();
         captureGl.activeTexture(captureGl.TEXTURE1);
         captureGl.bindTexture(captureGl.TEXTURE_2D, captureLutTexture);
@@ -406,7 +425,13 @@ function capturePhoto() {
         captureGl.drawArrays(captureGl.TRIANGLE_STRIP, 0, 4);
         
         let link = document.createElement('a');
-        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);  // Qualità JPEG 98%
+        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);
+        link.download = `photo_${Date.now()}.jpg`;
+        link.click();
+    };, 0, 4);
+        
+        let link = document.createElement('a');
+        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);
         link.download = `photo_${Date.now()}.jpg`;
         link.click();
     };
@@ -434,26 +459,23 @@ function startRecording() {
     if (!currentStream) return;
     
     recordedChunks = [];
-    let canvasStream = canvas.captureStream(60);  // 60 FPS per registrazione
+    let canvasStream = canvas.captureStream(60);
     let audioTrack = currentStream.getAudioTracks()[0];
     
     if (audioTrack) {
         canvasStream.addTrack(audioTrack);
     }
     
-    // Opzioni per alta qualità video
     let options = {
-        mimeType: 'video/webm;codecs=vp9',  // VP9 per migliore qualità
-        videoBitsPerSecond: 8000000         // 8 Mbps per alta qualità
+        mimeType: 'video/webm;codecs=vp9',
+        videoBitsPerSecond: 8000000
     };
     
-    // Fallback se VP9 non è supportato
     if (!MediaRecorder.isTypeSupported(options.mimeType)) {
         options.mimeType = 'video/webm;codecs=vp8';
         console.log('VP9 non supportato, uso VP8');
     }
     
-    // Ulteriore fallback
     if (!MediaRecorder.isTypeSupported(options.mimeType)) {
         options = { mimeType: 'video/webm' };
         console.log('Uso codec di default');
@@ -524,7 +546,6 @@ function handleVisibilityChange() {
     }
 }
 
-// Event Listeners
 if (switchBtn) {
     switchBtn.addEventListener('click', function() {
         usingFrontCamera = !usingFrontCamera;
@@ -532,7 +553,6 @@ if (switchBtn) {
     });
 }
 
-// Gestione eventi touch e mouse per lo shutter
 if (shutter) {
     shutter.addEventListener('mousedown', handlePressStart);
     shutter.addEventListener('mouseup', handlePressEnd);
@@ -543,19 +563,16 @@ if (shutter) {
     shutter.addEventListener('touchcancel', handlePressEnd);
 }
 
-// Event listener per il ridimensionamento della finestra
 let resizeTimeout;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimeout);
     resizeTimeout = setTimeout(resizeCanvas, 100);
 });
 
-// Event listener per il cambio di visibilità della pagina
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
-// Inizializzazione
 if (initWebGL()) {
-    checkCameraCapabilities();  // Controlla le capacità prima di iniziare
+    checkCameraCapabilities();
     startCamera();
 } else {
     showError('Impossibile inizializzare WebGL');
