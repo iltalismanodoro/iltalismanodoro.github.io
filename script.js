@@ -1,6 +1,7 @@
+
 let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
-let gl = canvas.getContext('webgl', {
+let gl = canvas ? canvas.getContext('webgl', {
     antialias: true,
     alpha: false,
     depth: false,
@@ -14,7 +15,8 @@ let gl = canvas.getContext('webgl', {
     stencil: false,
     preserveDrawingBuffer: true,
     powerPreference: 'high-performance'
-});
+}) : null;
+
 let shutter = document.getElementById('shutter');
 let switchBtn = document.getElementById('switch');
 let errorMessage = document.getElementById('error-message');
@@ -210,7 +212,7 @@ function loadLUT() {
 }
 
 function render() {
-    if (!video.videoWidth || !video.videoHeight || !isLutLoaded) {
+    if (!video || !video.videoWidth || !video.videoHeight || !isLutLoaded) {
         animationId = requestAnimationFrame(render);
         return;
     }
@@ -298,6 +300,8 @@ function tryLowerQuality() {
 }
 
 function resizeCanvas() {
+    if (!video || !canvas) return;
+    
     let vw = video.videoWidth;
     let vh = video.videoHeight;
     
@@ -355,6 +359,11 @@ function capturePhoto() {
     let captureFragmentShader = createShader(captureGl, captureGl.FRAGMENT_SHADER, fragmentShaderSource);
     let captureProgram = createProgram(captureGl, captureVertexShader, captureFragmentShader);
     
+    if (!captureProgram) {
+        showError('Errore nella creazione del programma di cattura');
+        return;
+    }
+    
     captureGl.useProgram(captureProgram);
     
     let capturePositionLocation = captureGl.getAttribLocation(captureProgram, 'a_position');
@@ -380,60 +389,40 @@ function capturePhoto() {
     captureGl.activeTexture(captureGl.TEXTURE1);
     captureGl.bindTexture(captureGl.TEXTURE_2D, captureLutTexture);
     
+    function finalizeCaptureWithLUT(lutCanvas) {
+        captureGl.activeTexture(captureGl.TEXTURE1);
+        captureGl.bindTexture(captureGl.TEXTURE_2D, captureLutTexture);
+        captureGl.texImage2D(captureGl.TEXTURE_2D, 0, captureGl.RGB, captureGl.RGB, captureGl.UNSIGNED_BYTE, lutCanvas);
+        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_S, captureGl.CLAMP_TO_EDGE);
+        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_T, captureGl.CLAMP_TO_EDGE);
+        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MIN_FILTER, captureGl.LINEAR);
+        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MAG_FILTER, captureGl.LINEAR);
+        
+        captureGl.viewport(0, 0, captureCanvas.width, captureCanvas.height);
+        captureGl.clear(captureGl.COLOR_BUFFER_BIT);
+        
+        captureGl.uniform1i(captureGl.getUniformLocation(captureProgram, 'u_image'), 0);
+        captureGl.uniform1i(captureGl.getUniformLocation(captureProgram, 'u_lut'), 1);
+        captureGl.uniform1f(captureGl.getUniformLocation(captureProgram, 'u_flipX'), usingFrontCamera ? -1.0 : 1.0);
+        captureGl.uniform2f(captureGl.getUniformLocation(captureProgram, 'u_imageSize'), video.videoWidth, video.videoHeight);
+        
+        captureGl.drawArrays(captureGl.TRIANGLE_STRIP, 0, 4);
+        
+        let link = document.createElement('a');
+        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);
+        link.download = `photo_${Date.now()}.jpg`;
+        link.click();
+    }
+    
     let lutImage = new Image();
     lutImage.crossOrigin = 'anonymous';
     lutImage.onload = function() {
-        captureGl.activeTexture(captureGl.TEXTURE1);
-        captureGl.bindTexture(captureGl.TEXTURE_2D, captureLutTexture);
-        captureGl.texImage2D(captureGl.TEXTURE_2D, 0, captureGl.RGB, captureGl.RGB, captureGl.UNSIGNED_BYTE, lutImage);
-        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_S, captureGl.CLAMP_TO_EDGE);
-        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_T, captureGl.CLAMP_TO_EDGE);
-        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MIN_FILTER, captureGl.LINEAR);
-        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MAG_FILTER, captureGl.LINEAR);
-        
-        captureGl.viewport(0, 0, captureCanvas.width, captureCanvas.height);
-        captureGl.clear(captureGl.COLOR_BUFFER_BIT);
-        
-        captureGl.uniform1i(captureGl.getUniformLocation(captureProgram, 'u_image'), 0);
-        captureGl.uniform1i(captureGl.getUniformLocation(captureProgram, 'u_lut'), 1);
-        captureGl.uniform1f(captureGl.getUniformLocation(captureProgram, 'u_flipX'), usingFrontCamera ? -1.0 : 1.0);
-        
-        captureGl.drawArrays(captureGl.TRIANGLE_STRIP, 0, 4);
-        
-        let link = document.createElement('a');
-        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);
-        link.download = `photo_${Date.now()}.jpg`;
-        link.click();
+        finalizeCaptureWithLUT(lutImage);
     };
     lutImage.onerror = function() {
+        console.warn('Uso LUT di default per cattura');
         let defaultLUT = createDefaultLUT();
-        captureGl.activeTexture(captureGl.TEXTURE1);
-        captureGl.bindTexture(captureGl.TEXTURE_2D, captureLutTexture);
-        captureGl.texImage2D(captureGl.TEXTURE_2D, 0, captureGl.RGB, captureGl.RGB, captureGl.UNSIGNED_BYTE, defaultLUT);
-        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_S, captureGl.CLAMP_TO_EDGE);
-        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_WRAP_T, captureGl.CLAMP_TO_EDGE);
-        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MIN_FILTER, captureGl.LINEAR);
-        captureGl.texParameteri(captureGl.TEXTURE_2D, captureGl.TEXTURE_MAG_FILTER, captureGl.LINEAR);
-        
-        captureGl.viewport(0, 0, captureCanvas.width, captureCanvas.height);
-        captureGl.clear(captureGl.COLOR_BUFFER_BIT);
-        
-        captureGl.uniform1i(captureGl.getUniformLocation(captureProgram, 'u_image'), 0);
-        captureGl.uniform1i(captureGl.getUniformLocation(captureProgram, 'u_lut'), 1);
-        captureGl.uniform1f(captureGl.getUniformLocation(captureProgram, 'u_flipX'), usingFrontCamera ? -1.0 : 1.0);
-        
-        captureGl.drawArrays(captureGl.TRIANGLE_STRIP, 0, 4);
-        
-        let link = document.createElement('a');
-        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);
-        link.download = `photo_${Date.now()}.jpg`;
-        link.click();
-    };, 0, 4);
-        
-        let link = document.createElement('a');
-        link.href = captureCanvas.toDataURL('image/jpeg', 0.98);
-        link.download = `photo_${Date.now()}.jpg`;
-        link.click();
+        finalizeCaptureWithLUT(defaultLUT);
     };
     lutImage.src = 'lut.png';
 }
@@ -456,7 +445,7 @@ function handlePressEnd(e) {
 }
 
 function startRecording() {
-    if (!currentStream) return;
+    if (!currentStream || !canvas) return;
     
     recordedChunks = [];
     let canvasStream = canvas.captureStream(60);
@@ -481,36 +470,41 @@ function startRecording() {
         console.log('Uso codec di default');
     }
     
-    mediaRecorder = new MediaRecorder(canvasStream, options);
-    
-    mediaRecorder.ondataavailable = function(event) {
-        if (event.data.size > 0) {
-            recordedChunks.push(event.data);
-        }
-    };
-    
-    mediaRecorder.onstop = function() {
-        let blob = new Blob(recordedChunks, {
-            type: 'video/webm'
-        });
-        let url = URL.createObjectURL(blob);
-        let a = document.createElement('a');
-        a.href = url;
-        a.download = `video_${Date.now()}.webm`;
-        a.click();
-        URL.revokeObjectURL(url);
-    };
-    
-    mediaRecorder.start();
-    isRecording = true;
-    shutter.classList.add('recording');
+    try {
+        mediaRecorder = new MediaRecorder(canvasStream, options);
+        
+        mediaRecorder.ondataavailable = function(event) {
+            if (event.data.size > 0) {
+                recordedChunks.push(event.data);
+            }
+        };
+        
+        mediaRecorder.onstop = function() {
+            let blob = new Blob(recordedChunks, {
+                type: 'video/webm'
+            });
+            let url = URL.createObjectURL(blob);
+            let a = document.createElement('a');
+            a.href = url;
+            a.download = `video_${Date.now()}.webm`;
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+        
+        mediaRecorder.start();
+        isRecording = true;
+        if (shutter) shutter.classList.add('recording');
+    } catch (err) {
+        console.error('Errore avvio registrazione:', err);
+        showError('Errore durante l\'avvio della registrazione');
+    }
 }
 
 function stopRecording() {
     if (mediaRecorder && isRecording) {
         mediaRecorder.stop();
         isRecording = false;
-        shutter.classList.remove('recording');
+        if (shutter) shutter.classList.remove('recording');
     }
 }
 
@@ -539,7 +533,7 @@ function handleVisibilityChange() {
         stopAllStreams();
     } else {
         setTimeout(() => {
-            if (initWebGL()) {
+            if (canvas && initWebGL()) {
                 startCamera();
             }
         }, 100);
@@ -571,9 +565,13 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
-if (initWebGL()) {
-    checkCameraCapabilities();
-    startCamera();
+if (canvas && video) {
+    if (initWebGL()) {
+        checkCameraCapabilities();
+        startCamera();
+    } else {
+        showError('Impossibile inizializzare WebGL');
+    }
 } else {
-    showError('Impossibile inizializzare WebGL');
+    showError('Elementi HTML necessari non trovati');
 }
