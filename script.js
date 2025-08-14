@@ -352,7 +352,37 @@ function stopRecording() {
     }
 }
 
-switchBtn.addEventListener('click', () => {
+function stopAllStreams() {
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => {
+            track.stop();
+            console.log('Track fermato:', track.kind);
+        });
+        currentStream = null;
+    }
+    
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+    }
+    
+    if (isRecording && mediaRecorder) {
+        mediaRecorder.stop();
+        isRecording = false;
+    }
+}
+
+function handleVisibilityChange() {
+    if (document.hidden) {
+        stopAllStreams();
+    } else {
+        setTimeout(() => {
+            if (initWebGL()) {
+                startCamera();
+            }
+        }, 100);
+    }
+}
     usingFrontCamera = !usingFrontCamera;
     startCamera();
 });
