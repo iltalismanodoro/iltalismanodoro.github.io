@@ -1,5 +1,3 @@
-// Gli shader sono definiti in shaders.js - assicurati di includerlo prima di questo script
-
 let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
 let gl = canvas ? canvas.getContext('webgl', {
@@ -332,70 +330,17 @@ function tryLowerQuality() {
             if (!animationId) {
                 render();
             }
-            // CSS per il pulsante flash (aggiungere al file CSS esistente)
-const flashButtonStyles = `
-#flash {
-    position: absolute;
-    bottom: 60px;
-    left: 30px;
-    width: 50px;
-    height: 50px;
-    background: rgba(0,0,0,0.6);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    cursor: pointer;
-    z-index: 10;
-    outline: none;
-    border: none;
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    transition: transform 0.1s ease, background-color 0.1s ease;
-}
-
-#flash:active {
-    background: rgba(0,0,0,0.8);
-    transform: scale(0.95);
-}
-
-#flash.active {
-    background: rgba(255, 235, 59, 0.2);
-    border: 2px solid #ffeb3b;
-}
-
-#flash svg {
-    width: 24px;
-    height: 24px;
-    fill: #fff;
-    pointer-events: none;
-    transition: transform 0.1s ease, fill 0.2s ease;
-}
-
-#flash:active svg {
-    transform: scale(0.9);
-}
-
-@media (max-width: 480px) {
-    #flash {
-        width: 45px;
-        height: 45px;
-        bottom: 40px;
-        left: 20px;
+            // Inizializzazione con controlli di sicurezza
+if (canvas && video) {
+    if (initWebGL()) {
+        checkCameraCapabilities();
+        startCamera();
+    } else {
+        showError('Impossibile inizializzare WebGL');
     }
-    
-    #flash svg {
-        width: 20px;
-        height: 20px;
-    }
+} else {
+    showError('Elementi HTML necessari non trovati');
 }
-`;
-
-updateFlashVisibility();
             console.log(`Risoluzione fallback: ${video.videoWidth}x${video.videoHeight}`);
         };
     }).catch(err => {
