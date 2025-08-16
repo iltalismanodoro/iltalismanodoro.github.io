@@ -1,3 +1,4 @@
+// Gli shader sono definiti in shaders.js - assicurati di includerlo prima di questo script
 
 let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
@@ -19,9 +20,12 @@ let gl = canvas ? canvas.getContext('webgl', {
 
 let shutter = document.getElementById('shutter');
 let switchBtn = document.getElementById('switch');
+let flashBtn = document.getElementById('flash');
 let errorMessage = document.getElementById('error-message');
 let currentStream;
 let usingFrontCamera = false;
+let flashEnabled = false;
+let currentVideoTrack = null;
 
 let program;
 let positionBuffer;
@@ -228,7 +232,43 @@ function render() {
     animationId = requestAnimationFrame(render);
 }
 
-function startCamera() {
+function updateFlashVisibility() {
+    if (flashBtn) {
+        flashBtn.style.display = usingFrontCamera ? 'none' : 'flex';
+    }
+}
+
+async function toggleFlash() {
+    if (!currentVideoTrack || usingFrontCamera) return;
+    
+    try {
+        const capabilities = currentVideoTrack.getCapabilities();
+        
+        if (capabilities.torch) {
+            flashEnabled = !flashEnabled;
+            await currentVideoTrack.applyConstraints({
+                advanced: [{ torch: flashEnabled }]
+            });
+            
+            // Aggiorna l'interfaccia
+            if (flashBtn) {
+                flashBtn.classList.toggle('active', flashEnabled);
+                const svg = flashBtn.querySelector('svg');
+                if (svg) {
+                    svg.style.fill = flashEnabled ? '#ffeb3b' : '#fff';
+                }
+            }
+            
+            console.log(`Flash ${flashEnabled ? 'acceso' : 'spento'}`);
+        } else {
+            console.log('Flash non supportato su questo dispositivo');
+            showError('Flash non disponibile');
+        }
+    } catch (err) {
+        console.error('Errore controllo flash:', err);
+        showError('Errore nel controllo del flash');
+    }
+}
     if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
     }
@@ -283,6 +323,7 @@ function tryLowerQuality() {
     
     navigator.mediaDevices.getUserMedia(constraints).then(stream => {
         currentStream = stream;
+        currentVideoTrack = stream.getVideoTracks()[0];
         video.srcObject = stream;
         video.muted = true;
         video.onloadedmetadata = () => {
@@ -291,6 +332,70 @@ function tryLowerQuality() {
             if (!animationId) {
                 render();
             }
+            // CSS per il pulsante flash (aggiungere al file CSS esistente)
+const flashButtonStyles = `
+#flash {
+    position: absolute;
+    bottom: 60px;
+    left: 30px;
+    width: 50px;
+    height: 50px;
+    background: rgba(0,0,0,0.6);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    cursor: pointer;
+    z-index: 10;
+    outline: none;
+    border: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+#flash:active {
+    background: rgba(0,0,0,0.8);
+    transform: scale(0.95);
+}
+
+#flash.active {
+    background: rgba(255, 235, 59, 0.2);
+    border: 2px solid #ffeb3b;
+}
+
+#flash svg {
+    width: 24px;
+    height: 24px;
+    fill: #fff;
+    pointer-events: none;
+    transition: transform 0.1s ease, fill 0.2s ease;
+}
+
+#flash:active svg {
+    transform: scale(0.9);
+}
+
+@media (max-width: 480px) {
+    #flash {
+        width: 45px;
+        height: 45px;
+        bottom: 40px;
+        left: 20px;
+    }
+    
+    #flash svg {
+        width: 20px;
+        height: 20px;
+    }
+}
+`;
+
+updateFlashVisibility();
             console.log(`Risoluzione fallback: ${video.videoWidth}x${video.videoHeight}`);
         };
     }).catch(err => {
@@ -515,6 +620,8 @@ function stopAllStreams() {
             console.log('Track fermato:', track.kind);
         });
         currentStream = null;
+        currentVideoTrack = null;
+        flashEnabled = false;
     }
     
     if (animationId) {
@@ -540,10 +647,17 @@ function handleVisibilityChange() {
     }
 }
 
+// Event listeners con controlli di sicurezza
 if (switchBtn) {
     switchBtn.addEventListener('click', function() {
         usingFrontCamera = !usingFrontCamera;
         startCamera();
+    });
+}
+
+if (flashBtn) {
+    flashBtn.addEventListener('click', function() {
+        toggleFlash();
     });
 }
 
@@ -565,6 +679,7 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
+// Inizializzazione con controlli di sicurezza
 if (canvas && video) {
     if (initWebGL()) {
         checkCameraCapabilities();
