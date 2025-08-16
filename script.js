@@ -1,3 +1,5 @@
+// Gli shader sono definiti in shaders.js - assicurati di includerlo prima di questo script
+
 let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
 let gl = canvas ? canvas.getContext('webgl', {
@@ -68,6 +70,43 @@ function showError(message) {
         }, 5000);
     }
     console.error(message);
+}
+
+function updateFlashVisibility() {
+    if (flashBtn) {
+        flashBtn.style.display = usingFrontCamera ? 'none' : 'flex';
+    }
+}
+
+async function toggleFlash() {
+    if (!currentVideoTrack || usingFrontCamera) return;
+    
+    try {
+        const capabilities = currentVideoTrack.getCapabilities();
+        
+        if (capabilities.torch) {
+            flashEnabled = !flashEnabled;
+            await currentVideoTrack.applyConstraints({
+                advanced: [{ torch: flashEnabled }]
+            });
+            
+            if (flashBtn) {
+                flashBtn.classList.toggle('active', flashEnabled);
+                const svg = flashBtn.querySelector('svg');
+                if (svg) {
+                    svg.style.fill = flashEnabled ? '#ffeb3b' : '#fff';
+                }
+            }
+            
+            console.log(`Flash ${flashEnabled ? 'acceso' : 'spento'}`);
+        } else {
+            console.log('Flash non supportato su questo dispositivo');
+            showError('Flash non disponibile');
+        }
+    } catch (err) {
+        console.error('Errore controllo flash:', err);
+        showError('Errore nel controllo del flash');
+    }
 }
 
 function createShader(gl, type, source) {
@@ -230,46 +269,13 @@ function render() {
     animationId = requestAnimationFrame(render);
 }
 
-function updateFlashVisibility() {
-    if (flashBtn) {
-        flashBtn.style.display = usingFrontCamera ? 'none' : 'flex';
-    }
-}
-
-async function toggleFlash() {
-    if (!currentVideoTrack || usingFrontCamera) return;
-    
-    try {
-        const capabilities = currentVideoTrack.getCapabilities();
-        
-        if (capabilities.torch) {
-            flashEnabled = !flashEnabled;
-            await currentVideoTrack.applyConstraints({
-                advanced: [{ torch: flashEnabled }]
-            });
-            
-            // Aggiorna l'interfaccia
-            if (flashBtn) {
-                flashBtn.classList.toggle('active', flashEnabled);
-                const svg = flashBtn.querySelector('svg');
-                if (svg) {
-                    svg.style.fill = flashEnabled ? '#ffeb3b' : '#fff';
-                }
-            }
-            
-            console.log(`Flash ${flashEnabled ? 'acceso' : 'spento'}`);
-        } else {
-            console.log('Flash non supportato su questo dispositivo');
-            showError('Flash non disponibile');
-        }
-    } catch (err) {
-        console.error('Errore controllo flash:', err);
-        showError('Errore nel controllo del flash');
-    }
-}
+function startCamera() {
     if (currentStream) {
         currentStream.getTracks().forEach(track => track.stop());
     }
+    
+    flashEnabled = false;
+    currentVideoTrack = null;
     
     let needsAudio = typeof MediaRecorder !== 'undefined';
     
@@ -291,6 +297,7 @@ async function toggleFlash() {
     
     navigator.mediaDevices.getUserMedia(constraints).then(stream => {
         currentStream = stream;
+        currentVideoTrack = stream.getVideoTracks()[0];
         video.srcObject = stream;
         video.muted = true;
         video.onloadedmetadata = () => {
@@ -299,7 +306,13 @@ async function toggleFlash() {
             if (!animationId) {
                 render();
             }
+            updateFlashVisibility();
             console.log(`Risoluzione video: ${video.videoWidth}x${video.videoHeight}`);
+            
+            if (currentVideoTrack && !usingFrontCamera) {
+                const capabilities = currentVideoTrack.getCapabilities();
+                console.log('Flash supportato:', !!capabilities.torch);
+            }
         };
     }).catch(err => {
         console.error('Errore fotocamera:', err);
@@ -330,17 +343,7 @@ function tryLowerQuality() {
             if (!animationId) {
                 render();
             }
-            // Inizializzazione con controlli di sicurezza
-if (canvas && video) {
-    if (initWebGL()) {
-        checkCameraCapabilities();
-        startCamera();
-    } else {
-        showError('Impossibile inizializzare WebGL');
-    }
-} else {
-    showError('Elementi HTML necessari non trovati');
-}
+            updateFlashVisibility();
             console.log(`Risoluzione fallback: ${video.videoWidth}x${video.videoHeight}`);
         };
     }).catch(err => {
@@ -592,7 +595,7 @@ function handleVisibilityChange() {
     }
 }
 
-// Event listeners con controlli di sicurezza
+// Event listeners
 if (switchBtn) {
     switchBtn.addEventListener('click', function() {
         usingFrontCamera = !usingFrontCamera;
@@ -624,7 +627,7 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
-// Inizializzazione con controlli di sicurezza
+// Inizializzazione
 if (canvas && video) {
     if (initWebGL()) {
         checkCameraCapabilities();
