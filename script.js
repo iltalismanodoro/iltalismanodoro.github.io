@@ -1,5 +1,3 @@
-// Gli shader sono definiti in shaders.js - assicurati di includerlo prima di questo script
-
 let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
 let gl = canvas ? canvas.getContext('webgl', {
@@ -39,6 +37,7 @@ let recordedChunks = [];
 let isRecording = false;
 let pressTimer;
 let longPressThreshold = 500;
+let flashWasEnabledBeforeCapture = false; // Stato flash prima della cattura
 
 async function checkCameraCapabilities() {
     try {
@@ -78,17 +77,18 @@ function updateFlashVisibility() {
     }
 }
 
-async function toggleFlash() {
-    if (!currentVideoTrack || usingFrontCamera) return;
+async function setFlashState(enabled) {
+    if (!currentVideoTrack || usingFrontCamera) return false;
     
     try {
         const capabilities = currentVideoTrack.getCapabilities();
         
         if (capabilities.torch) {
-            flashEnabled = !flashEnabled;
             await currentVideoTrack.applyConstraints({
-                advanced: [{ torch: flashEnabled }]
+                advanced: [{ torch: enabled }]
             });
+            
+            flashEnabled = enabled;
             
             if (flashBtn) {
                 flashBtn.classList.toggle('active', flashEnabled);
@@ -99,13 +99,56 @@ async function toggleFlash() {
             }
             
             console.log(`Flash ${flashEnabled ? 'acceso' : 'spento'}`);
+            return true;
         } else {
             console.log('Flash non supportato su questo dispositivo');
-            showError('Flash non disponibile');
+            return false;
         }
     } catch (err) {
         console.error('Errore controllo flash:', err);
-        showError('Errore nel controllo del flash');
+        return false;
+    }
+}
+
+async function toggleFlash() {
+    await setFlashState(!flashEnabled);
+}
+
+// Funzione per attivare temporaneamente il flash durante la cattura
+async function activateFlashForCapture() {
+    if (usingFrontCamera || !currentVideoTrack) return false;
+    
+    try {
+        const capabilities = currentVideoTrack.getCapabilities();
+        if (!capabilities.torch) return false;
+        
+        // Salva lo stato corrente del flash
+        flashWasEnabledBeforeCapture = flashEnabled;
+        
+        // Attiva il flash se non è già attivo
+        if (!flashEnabled) {
+            await setFlashState(true);
+        }
+        
+        return true;
+    } catch (err) {
+        console.error('Errore attivazione flash per cattura:', err);
+        return false;
+    }
+}
+
+// Funzione per ripristinare lo stato del flash dopo la cattura
+async function restoreFlashAfterCapture() {
+    if (usingFrontCamera || !currentVideoTrack) return;
+    
+    try {
+        // Ripristina lo stato originale del flash
+        if (!flashWasEnabledBeforeCapture && flashEnabled) {
+            // Il flash era spento prima della cattura, spegnilo
+            await setFlashState(false);
+        }
+    } catch (err) {
+        console.error('Errore ripristino flash dopo cattura:', err);
     }
 }
 
@@ -387,10 +430,18 @@ function resizeCanvas() {
     }
 }
 
-function capturePhoto() {
+async function capturePhoto() {
     if (!isLutLoaded) {
         showError('LUT non ancora caricata');
         return;
+    }
+    
+    // Attiva il flash per la foto
+    const flashActivated = await activateFlashForCapture();
+    
+    // Piccolo delay per dare tempo al flash di attivarsi
+    if (flashActivated) {
+        await new Promise(resolve => setTimeout(resolve, 200));
     }
     
     let captureCanvas = document.createElement('canvas');
@@ -405,6 +456,7 @@ function capturePhoto() {
     
     if (!captureGl) {
         showError('Impossibile creare contesto WebGL per cattura');
+        await restoreFlashAfterCapture();
         return;
     }
     
@@ -414,6 +466,7 @@ function capturePhoto() {
     
     if (!captureProgram) {
         showError('Errore nella creazione del programma di cattura');
+        await restoreFlashAfterCapture();
         return;
     }
     
@@ -442,7 +495,7 @@ function capturePhoto() {
     captureGl.activeTexture(captureGl.TEXTURE1);
     captureGl.bindTexture(captureGl.TEXTURE_2D, captureLutTexture);
     
-    function finalizeCaptureWithLUT(lutCanvas) {
+    async function finalizeCaptureWithLUT(lutCanvas) {
         captureGl.activeTexture(captureGl.TEXTURE1);
         captureGl.bindTexture(captureGl.TEXTURE_2D, captureLutTexture);
         captureGl.texImage2D(captureGl.TEXTURE_2D, 0, captureGl.RGB, captureGl.RGB, captureGl.UNSIGNED_BYTE, lutCanvas);
@@ -465,6 +518,9 @@ function capturePhoto() {
         link.href = captureCanvas.toDataURL('image/jpeg', 0.98);
         link.download = `photo_${Date.now()}.jpg`;
         link.click();
+        
+        // Ripristina lo stato del flash dopo aver completato la cattura
+        await restoreFlashAfterCapture();
     }
     
     let lutImage = new Image();
@@ -497,8 +553,11 @@ function handlePressEnd(e) {
     }
 }
 
-function startRecording() {
+async function startRecording() {
     if (!currentStream || !canvas) return;
+    
+    // Attiva il flash per il video
+    await activateFlashForCapture();
     
     recordedChunks = [];
     let canvasStream = canvas.captureStream(60);
@@ -532,7 +591,7 @@ function startRecording() {
             }
         };
         
-        mediaRecorder.onstop = function() {
+        mediaRecorder.onstop = async function() {
             let blob = new Blob(recordedChunks, {
                 type: 'video/webm'
             });
@@ -542,14 +601,19 @@ function startRecording() {
             a.download = `video_${Date.now()}.webm`;
             a.click();
             URL.revokeObjectURL(url);
+            
+            // Ripristina lo stato del flash dopo la registrazione
+            await restoreFlashAfterCapture();
         };
         
         mediaRecorder.start();
         isRecording = true;
         if (shutter) shutter.classList.add('recording');
+        console.log('Registrazione avviata con flash attivato');
     } catch (err) {
         console.error('Errore avvio registrazione:', err);
         showError('Errore durante l\'avvio della registrazione');
+        await restoreFlashAfterCapture();
     }
 }
 
@@ -558,6 +622,7 @@ function stopRecording() {
         mediaRecorder.stop();
         isRecording = false;
         if (shutter) shutter.classList.remove('recording');
+        console.log('Registrazione fermata');
     }
 }
 
