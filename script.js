@@ -1,5 +1,3 @@
-// Gli shader sono definiti in shaders.js - assicurati di includerlo prima di questo script
-
 let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
 let gl = canvas ? canvas.getContext('webgl', {
@@ -25,7 +23,7 @@ let errorMessage = document.getElementById('error-message');
 let currentStream;
 let usingFrontCamera = false;
 let flashEnabled = false;
-let flashForCapture = true; // true = si accende durante cattura, false = mai
+let flashForCapture = true;
 let currentVideoTrack = null;
 
 let program;
@@ -91,20 +89,17 @@ function updateFlashButtonAppearance() {
     const svg = flashBtn.querySelector('svg');
     if (!svg) return;
     
+    flashBtn.classList.remove('active');
+    
     if (flashForCapture) {
-        // Flash attivo - icona piena bianca
-        svg.style.fill = '#fff';
+        svg.style.fill = '#ffffff';
         svg.style.stroke = 'none';
-        svg.style.strokeWidth = '0';
         svg.style.opacity = '1';
-        flashBtn.classList.add('active');
     } else {
-        // Flash disattivato - icona vuota
-        svg.style.fill = 'transparent';
-        svg.style.stroke = '#fff';
+        svg.style.fill = 'none';
+        svg.style.stroke = '#ffffff';
         svg.style.strokeWidth = '2px';
         svg.style.opacity = '0.6';
-        flashBtn.classList.remove('active');
     }
 }
 
@@ -141,49 +136,36 @@ async function toggleFlash() {
         return;
     }
     
-    // Semplice toggle ON/OFF
     flashForCapture = !flashForCapture;
-    
-    // Assicurati che il flash hardware sia spento quando non stiamo catturando
-    if (!flashForCapture && flashEnabled) {
-        await setFlashState(false);
-    }
-    
     updateFlashButtonAppearance();
     console.log(`Flash durante cattura: ${flashForCapture ? 'ATTIVO' : 'DISATTIVATO'}`);
 }
 
-// Funzione per attivare temporaneamente il flash durante la cattura
 async function activateFlashForCapture() {
-    if (usingFrontCamera || !currentVideoTrack) return false;
+    if (usingFrontCamera || !currentVideoTrack || !flashForCapture) return false;
     
     try {
         const capabilities = currentVideoTrack.getCapabilities();
         if (!capabilities.torch) return false;
         
-        // Salva lo stato corrente del flash
         flashWasEnabledBeforeCapture = flashEnabled;
         
-        // Attiva il flash solo se flashForCapture è true
-        if (flashForCapture && !flashEnabled) {
+        if (!flashEnabled) {
             await setFlashState(true);
             return true;
         }
         
-        return flashForCapture && flashEnabled;
+        return true;
     } catch (err) {
         console.error('Errore attivazione flash per cattura:', err);
         return false;
     }
 }
 
-// Funzione per ripristinare lo stato del flash dopo la cattura
 async function restoreFlashAfterCapture() {
     if (usingFrontCamera || !currentVideoTrack) return;
     
     try {
-        // Ripristina lo stato solo se il flash era spento prima della cattura
-        // e flashForCapture è attivo (significa che l'abbiamo acceso noi)
         if (flashForCapture && !flashWasEnabledBeforeCapture && flashEnabled) {
             await setFlashState(false);
         }
