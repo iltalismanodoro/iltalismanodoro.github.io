@@ -23,6 +23,7 @@ let errorMessage = document.getElementById('error-message');
 let currentStream;
 let usingFrontCamera = false;
 let flashEnabled = false;
+let flashForCapture = true;
 let currentVideoTrack = null;
 
 let program;
@@ -37,7 +38,7 @@ let recordedChunks = [];
 let isRecording = false;
 let pressTimer;
 let longPressThreshold = 500;
-let flashWasEnabledBeforeCapture = false; // Stato flash prima della cattura
+let flashWasEnabledBeforeCapture = false;
 
 async function checkCameraCapabilities() {
     try {
@@ -73,7 +74,39 @@ function showError(message) {
 
 function updateFlashVisibility() {
     if (flashBtn) {
-        flashBtn.style.display = usingFrontCamera ? 'none' : 'flex';
+        if (usingFrontCamera) {
+            flashBtn.style.display = 'none';
+        } else {
+            flashBtn.style.display = 'flex';
+            updateFlashButtonAppearance();
+        }
+    }
+}
+
+function updateFlashButtonAppearance() {
+    if (!flashBtn || usingFrontCamera) return;
+    
+    const svg = flashBtn.querySelector('svg');
+    
+    if (flashForCapture) {
+        flashBtn.classList.add('active');
+        if (svg) {
+            svg.style.fill = '#fff';
+            svg.style.opacity = '1';
+        }
+    } else {
+        flashBtn.classList.remove('active');
+        if (svg) {
+            svg.style.fill = 'transparent';
+            svg.style.stroke = '#fff';
+            svg.style.strokeWidth = '1.5px';
+            svg.style.opacity = '0.7';
+        }
+    }
+    
+    const modeText = flashBtn.querySelector('.mode-text');
+    if (modeText) {
+        modeText.remove();
     }
 }
 
@@ -89,16 +122,9 @@ async function setFlashState(enabled) {
             });
             
             flashEnabled = enabled;
+            updateFlashButtonAppearance();
             
-            if (flashBtn) {
-                flashBtn.classList.toggle('active', flashEnabled);
-                const svg = flashBtn.querySelector('svg');
-                if (svg) {
-                    svg.style.fill = flashEnabled ? '#ffeb3b' : '#fff';
-                }
-            }
-            
-            console.log(`Flash ${flashEnabled ? 'acceso' : 'spento'}`);
+            console.log(`Flash hardware ${flashEnabled ? 'acceso' : 'spento'}`);
             return true;
         } else {
             console.log('Flash non supportato su questo dispositivo');
@@ -111,10 +137,35 @@ async function setFlashState(enabled) {
 }
 
 async function toggleFlash() {
-    await setFlashState(!flashEnabled);
+    if (usingFrontCamera || !currentVideoTrack) return;
+    
+    const capabilities = currentVideoTrack.getCapabilities();
+    if (!capabilities.torch) {
+        showError('Flash non disponibile');
+        return;
+    }
+    
+    if (flashMode === 'on_capture') {
+        flashMode = 'always_on';
+        await setFlashState(true);
+    } else if (flashMode === 'always_on') {
+        flashMode = 'off';
+        await setFlashState(false);
+    } else if (flashMode === 'off') {
+        flashMode = 'on_capture';
+        await setFlashState(false);
+    }
+    
+    updateFlashButtonAppearance();
+    
+    const modeNames = {
+        'on_capture': 'Solo durante cattura',
+        'always_on': 'Sempre acceso', 
+        'off': 'Disattivato'
+    };
+    console.log(`Flash: ${modeNames[flashMode]}`);
 }
 
-// Funzione per attivare temporaneamente il flash durante la cattura
 async function activateFlashForCapture() {
     if (usingFrontCamera || !currentVideoTrack) return false;
     
@@ -122,31 +173,32 @@ async function activateFlashForCapture() {
         const capabilities = currentVideoTrack.getCapabilities();
         if (!capabilities.torch) return false;
         
-        // Salva lo stato corrente del flash
         flashWasEnabledBeforeCapture = flashEnabled;
         
-        // Attiva il flash se non è già attivo
-        if (!flashEnabled) {
-            await setFlashState(true);
+        if (flashMode === 'on_capture' || flashMode === 'always_on') {
+            if (!flashEnabled) {
+                await setFlashState(true);
+            }
+            return true;
         }
         
-        return true;
+        return false;
     } catch (err) {
         console.error('Errore attivazione flash per cattura:', err);
         return false;
     }
 }
 
-// Funzione per ripristinare lo stato del flash dopo la cattura
 async function restoreFlashAfterCapture() {
     if (usingFrontCamera || !currentVideoTrack) return;
     
     try {
-        // Ripristina lo stato originale del flash
-        if (!flashWasEnabledBeforeCapture && flashEnabled) {
-            // Il flash era spento prima della cattura, spegnilo
+
+        if (flashMode === 'on_capture' && !flashWasEnabledBeforeCapture && flashEnabled) {
+
             await setFlashState(false);
         }
+
     } catch (err) {
         console.error('Errore ripristino flash dopo cattura:', err);
     }
@@ -436,10 +488,8 @@ async function capturePhoto() {
         return;
     }
     
-    // Attiva il flash per la foto
     const flashActivated = await activateFlashForCapture();
     
-    // Piccolo delay per dare tempo al flash di attivarsi
     if (flashActivated) {
         await new Promise(resolve => setTimeout(resolve, 200));
     }
@@ -519,7 +569,6 @@ async function capturePhoto() {
         link.download = `photo_${Date.now()}.jpg`;
         link.click();
         
-        // Ripristina lo stato del flash dopo aver completato la cattura
         await restoreFlashAfterCapture();
     }
     
@@ -556,7 +605,6 @@ function handlePressEnd(e) {
 async function startRecording() {
     if (!currentStream || !canvas) return;
     
-    // Attiva il flash per il video
     await activateFlashForCapture();
     
     recordedChunks = [];
@@ -602,7 +650,6 @@ async function startRecording() {
             a.click();
             URL.revokeObjectURL(url);
             
-            // Ripristina lo stato del flash dopo la registrazione
             await restoreFlashAfterCapture();
         };
         
@@ -660,7 +707,6 @@ function handleVisibilityChange() {
     }
 }
 
-// Event listeners
 if (switchBtn) {
     switchBtn.addEventListener('click', function() {
         usingFrontCamera = !usingFrontCamera;
@@ -692,7 +738,6 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
-// Inizializzazione
 if (canvas && video) {
     if (initWebGL()) {
         checkCameraCapabilities();
