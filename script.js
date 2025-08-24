@@ -23,7 +23,7 @@ let errorMessage = document.getElementById('error-message');
 let currentStream;
 let usingFrontCamera = false;
 let flashEnabled = false;
-let flashForCapture = true;
+let flashForCapture = false;
 let currentVideoTrack = null;
 
 let program;
@@ -38,7 +38,7 @@ let recordedChunks = [];
 let isRecording = false;
 let pressTimer;
 let longPressThreshold = 500;
-let flashWasEnabledBeforeCapture = false; // Stato flash prima della cattura
+let flashWasEnabledBeforeCapture = false; 
 
 async function checkCameraCapabilities() {
     try {
@@ -459,10 +459,8 @@ async function capturePhoto() {
         return;
     }
     
-    // Attiva il flash per la foto
     const flashActivated = await activateFlashForCapture();
-    
-    // Piccolo delay per dare tempo al flash di attivarsi
+
     if (flashActivated) {
         await new Promise(resolve => setTimeout(resolve, 200));
     }
@@ -541,8 +539,6 @@ async function capturePhoto() {
         link.href = captureCanvas.toDataURL('image/jpeg', 0.98);
         link.download = `photo_${Date.now()}.jpg`;
         link.click();
-        
-        // Ripristina lo stato del flash dopo aver completato la cattura
         await restoreFlashAfterCapture();
     }
     
@@ -572,17 +568,13 @@ function handlePressEnd(e) {
     if (isRecording) {
         stopRecording();
     } else {
-        // Il flash si attiva solo qui, nel momento della cattura
         capturePhoto();
     }
 }
 
 async function startRecording() {
     if (!currentStream || !canvas) return;
-    
-    // Attiva il flash per il video
     await activateFlashForCapture();
-    
     recordedChunks = [];
     let canvasStream = canvas.captureStream(60);
     let audioTrack = currentStream.getAudioTracks()[0];
@@ -608,7 +600,6 @@ async function startRecording() {
     
     try {
         mediaRecorder = new MediaRecorder(canvasStream, options);
-        
         mediaRecorder.ondataavailable = function(event) {
             if (event.data.size > 0) {
                 recordedChunks.push(event.data);
@@ -625,8 +616,6 @@ async function startRecording() {
             a.download = `video_${Date.now()}.webm`;
             a.click();
             URL.revokeObjectURL(url);
-            
-            // Ripristina lo stato del flash dopo la registrazione
             await restoreFlashAfterCapture();
         };
         
@@ -684,7 +673,6 @@ function handleVisibilityChange() {
     }
 }
 
-// Event listeners
 if (switchBtn) {
     switchBtn.addEventListener('click', function() {
         usingFrontCamera = !usingFrontCamera;
@@ -716,7 +704,6 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
-// Inizializzazione
 if (canvas && video) {
     if (initWebGL()) {
         checkCameraCapabilities();
