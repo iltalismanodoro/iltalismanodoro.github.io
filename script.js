@@ -1,3 +1,5 @@
+// Gli shader sono definiti in shaders.js - assicurati di includerlo prima di questo script
+
 let video = document.getElementById('video');
 let canvas = document.getElementById('canvas');
 let gl = canvas ? canvas.getContext('webgl', {
@@ -23,7 +25,7 @@ let errorMessage = document.getElementById('error-message');
 let currentStream;
 let usingFrontCamera = false;
 let flashEnabled = false;
-let flashForCapture = false;
+let flashForCapture = true; // true = si accende durante cattura, false = mai
 let currentVideoTrack = null;
 
 let program;
@@ -38,7 +40,7 @@ let recordedChunks = [];
 let isRecording = false;
 let pressTimer;
 let longPressThreshold = 500;
-let flashWasEnabledBeforeCapture = false; 
+let flashWasEnabledBeforeCapture = false; // Stato flash prima della cattura
 
 async function checkCameraCapabilities() {
     try {
@@ -459,8 +461,10 @@ async function capturePhoto() {
         return;
     }
     
+    // Attiva il flash per la foto
     const flashActivated = await activateFlashForCapture();
-
+    
+    // Piccolo delay per dare tempo al flash di attivarsi
     if (flashActivated) {
         await new Promise(resolve => setTimeout(resolve, 200));
     }
@@ -539,6 +543,8 @@ async function capturePhoto() {
         link.href = captureCanvas.toDataURL('image/jpeg', 0.98);
         link.download = `photo_${Date.now()}.jpg`;
         link.click();
+        
+        // Ripristina lo stato del flash dopo aver completato la cattura
         await restoreFlashAfterCapture();
     }
     
@@ -568,13 +574,16 @@ function handlePressEnd(e) {
     if (isRecording) {
         stopRecording();
     } else {
+        // Il flash si attiva solo qui, nel momento della cattura
         capturePhoto();
     }
 }
 
 async function startRecording() {
     if (!currentStream || !canvas) return;
+    
     await activateFlashForCapture();
+    
     recordedChunks = [];
     let canvasStream = canvas.captureStream(60);
     let audioTrack = currentStream.getAudioTracks()[0];
@@ -584,9 +593,22 @@ async function startRecording() {
     }
     
     let options = {
-        mimeType: 'video/webm;codecs=vp9',
+        mimeType: 'video/mp4;codecs=h264,aac',
         videoBitsPerSecond: 8000000
     };
+    
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options.mimeType = 'video/mp4';
+        console.log('H264 non supportato, uso MP4 di default');
+    }
+    
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { 
+            mimeType: 'video/webm;codecs=vp9',
+            videoBitsPerSecond: 8000000
+        };
+        console.log('MP4 non supportato, uso WebM VP9');
+    }
     
     if (!MediaRecorder.isTypeSupported(options.mimeType)) {
         options.mimeType = 'video/webm;codecs=vp8';
@@ -600,6 +622,7 @@ async function startRecording() {
     
     try {
         mediaRecorder = new MediaRecorder(canvasStream, options);
+        
         mediaRecorder.ondataavailable = function(event) {
             if (event.data.size > 0) {
                 recordedChunks.push(event.data);
@@ -607,15 +630,25 @@ async function startRecording() {
         };
         
         mediaRecorder.onstop = async function() {
+            let mimeType = mediaRecorder.mimeType;
+            let extension = 'webm';
+            
+            if (mimeType.includes('mp4')) {
+                extension = 'mp4';
+            } else if (mimeType.includes('webm')) {
+                extension = 'webm';
+            }
+            
             let blob = new Blob(recordedChunks, {
-                type: 'video/webm'
+                type: mimeType
             });
             let url = URL.createObjectURL(blob);
             let a = document.createElement('a');
             a.href = url;
-            a.download = `video_${Date.now()}.webm`;
+            a.download = `video_${Date.now()}.${extension}`;
             a.click();
             URL.revokeObjectURL(url);
+            
             await restoreFlashAfterCapture();
         };
         
@@ -673,6 +706,7 @@ function handleVisibilityChange() {
     }
 }
 
+// Event listeners
 if (switchBtn) {
     switchBtn.addEventListener('click', function() {
         usingFrontCamera = !usingFrontCamera;
@@ -704,6 +738,7 @@ window.addEventListener('resize', () => {
 
 document.addEventListener('visibilitychange', handleVisibilityChange);
 
+// Inizializzazione
 if (canvas && video) {
     if (initWebGL()) {
         checkCameraCapabilities();
