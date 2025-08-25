@@ -25,7 +25,7 @@ let errorMessage = document.getElementById('error-message');
 let currentStream;
 let usingFrontCamera = false;
 let flashEnabled = false;
-let flashForCapture = true; // true = si accende durante cattura, false = mai
+let flashForCapture = false;
 let currentVideoTrack = null;
 
 let program;
